@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # Redis service for bot storage
+  redis:
+    image: redis:7-alpine
+    container_name: godot-news-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --appendfsync everysec
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - godot-bot-network
+
+  # Godot News Bot service
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: godot-news-bot
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      # Discord configuration
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      
+      # Gemini AI configuration
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      
+      # Bot configuration
+      MAX_CHANNELS_LIMIT: ${MAX_CHANNELS_LIMIT:-5}
+      CHECK_INTERVAL_MINUTES: ${CHECK_INTERVAL_MINUTES:-15}
+      
+      # Redis configuration
+      REDIS_URL: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    networks:
+      - godot-bot-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  godot-bot-network:
+    driver: bridge

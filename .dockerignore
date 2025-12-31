@@ -1,0 +1,39 @@
+# Ignore build artifacts
+godot-news-bot
+*.exe
+*.test
+*.out
+
+# Ignore data files (will be in Redis)
+*.json
+!go.mod
+!go.sum
+
+# Ignore documentation
+*.md
+!README.md
+
+# Ignore Git files
+.git
+.gitignore
+
+# Ignore development files
+.env
+.env.*
+.vscode
+.idea
+
+# Ignore test files (already tested before building)
+*_test.go
+
+# Ignore temporary files
+tmp/
+temp/
+*.log
+*.swp
+*.bak
+
+# Ignore Docker files from being copied again
+Dockerfile
+docker-compose.yml
+.dockerignore

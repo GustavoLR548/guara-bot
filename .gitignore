@@ -1,0 +1,15 @@
+# Secrets
+.env
+
+# Go binaries and build artifacts
+/bin/
+*.exe
+*.test
+*.out
+
+# Local state (You likely don't want to sync your database/history)
+history.json
+history.db
+
+# OS specific files
+.DS_Store
