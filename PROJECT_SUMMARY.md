@@ -1,34 +1,43 @@
 # Project Summary
 
-A Discord bot that monitors [Godot Engine news](https://godotengine.org/rss.xml) and posts AI-generated summaries to configured channels.
+A versatile Discord bot that monitors multiple RSS feeds and posts AI-generated summaries to configured channels with flexible time-based scheduling. Supports any RSS-enabled source including blogs, news sites, game engines, and developer communities.
 
 ## Architecture
 
-```
-┌─────────────┐     ┌──────────┐     ┌─────────┐
-│   Discord   │────▶│   Bot    │────▶│  Redis  │
-│   Server    │◀────│ (Go 1.23)│◀────│ Storage │
-└─────────────┘     └────┬─────┘     └─────────┘
-                         │
-                    ┌────▼────────┐
-                    │   Gemini    │
-                    │  AI (2.5)   │
-                    └─────────────┘
+```mermaid
+graph TB
+    Discord[Discord Server]
+    Bot[Bot<br/>Go 1.23]
+    Redis[Redis Storage]
+    Gemini[Gemini AI<br/>2.5 Flash]
+    
+    Discord <--> Bot
+    Bot <--> Redis
+    Bot --> Gemini
 ```
 
 ### Components
 
 **Bot Core** (`internal/bot/`)
-- Slash command handlers with channel parameters
-- 15-minute RSS polling (configurable)
-- 5-article pending queue for zero-channel scenarios
+- Slash command handlers for feed and channel management
+- Time-based scheduling per feed (HH:MM format)
+- Multi-feed support with independent processing
+- 5-article pending queue per feed
 - Permission validation (Manage Server required)
 
 **Storage** (`internal/storage/`)
 - Redis persistence with 5-second timeout
-- Channel management (SET)
-- Pending queue (LIST, max 5 articles)
-- Article history (STRING with 90-day TTL)
+- Channel-Feed many-to-many relationships (SET)
+- Feed repository with CRUD operations (HASH)
+- Per-feed schedules (LIST)
+- Per-feed pending queues (LIST, max 5 articles)
+- Per-feed article history (STRING with 90-day TTL)
+
+**Feed Management** (`internal/storage/`)
+- FeedRepository: Register/unregister feeds
+- Feed metadata: ID, URL, Title, Description, AddedAt, Schedule
+- Schedule validation (24-hour HH:MM format)
+- Many-to-many channel-feed associations
 
 **AI Summarization** (`internal/ai/`)
 - Google Gemini 2.5 Flash
@@ -36,10 +45,17 @@ A Discord bot that monitors [Godot Engine news](https://godotengine.org/rss.xml)
 - Enhanced logging (input length, API timing, finish reason)
 - Portuguese output without preambles
 
-**RSS Processor** (`internal/rss/`)
+**RSS Processor** (`internal/news/`)
 - gofeed v1.3.0 for parsing
 - go-readability for HTML extraction
-- GUID-based deduplication
+- Per-feed GUID-based deduplication
+
+**Cost Management** (`internal/ratelimit/`)
+- Rate limiting (10 RPM, 200k TPM defaults)
+- Token counting before requests
+- Circuit breaker pattern (5 failure threshold)
+- Exponential backoff retry (up to 3 attempts)
+- Real-time statistics and monitoring
 
 ## Tech Stack
 
@@ -52,31 +68,54 @@ A Discord bot that monitors [Godot Engine news](https://godotengine.org/rss.xml)
 
 ## Testing
 
-**39 tests** across all packages with miniredis in-memory mocks:
+**55 tests** across all packages with miniredis in-memory mocks:
 
 ```bash
 go test ./...        # Run all tests
 go test -cover ./... # With coverage
 ```
 
+**Coverage:**
+- Rate limiting: 94.0%
+- AI: 56.5%
+- Storage: 60.2%
+- News: 65.5%
+
 ## Commands
 
 | Command | Description | Permission |
 |---------|-------------|------------|
-| `/setup-news #channel` | Register channel | Manage Server |
-| `/remove-news #channel` | Remove channel | Manage Server |
-| `/list-channels` | List all channels | Manage Server |
-| `/update-news` | Force news check | Manage Server |
+| `/setup-news #channel [feed]` | Subscribe channel to feed (defaults to godot-official) | Manage Server |
+| `/remove-news #channel [feed]` | Unsubscribe channel from feed | Manage Server |
+| `/list-channels` | List all channels and their subscriptions | Manage Server |
+| `/update-news [feed]` | Force immediate check of specific feed (defaults to godot-official) | Manage Server |
+| `/update-all-news` | Force immediate check of all feeds | Manage Server |
+| `/register-feed <id> <url> [title] [desc]` | Register new RSS feed | Manage Server |
+| `/unregister-feed <id>` | Remove RSS feed | Manage Server |
+| `/list-feeds` | Show all registered feeds with schedules | Anyone |
+| `/schedule-feed <id> <times>` | Set check times (e.g., 09:00,13:00,18:00) | Manage Server |
 
 ## Configuration
 
 ```env
-DISCORD_TOKEN=required
-GEMINI_API_KEY=required
-MAX_CHANNELS_LIMIT=5              # Optional
-CHECK_INTERVAL_MINUTES=15         # Optional
-REDIS_URL=localhost:6379          # Optional
-REDIS_PASSWORD=                   # Optional
+# Required
+DISCORD_TOKEN=your_token
+GEMINI_API_KEY=your_key
+
+# Bot Settings (Optional)
+MAX_CHANNELS_LIMIT=5
+CHECK_INTERVAL_MINUTES=15           # Fallback for feeds without schedules
+REDIS_URL=localhost:6379
+REDIS_PASSWORD=
+
+# Rate Limiting (Optional - Gemini Free Tier Protection)
+GEMINI_MAX_REQUESTS_PER_MINUTE=10        # Conservative: below 15 RPM limit
+GEMINI_MAX_TOKENS_PER_MINUTE=200000      # Conservative: below 250k TPM limit
+GEMINI_MAX_TOKENS_PER_REQUEST=4000       # Safe per-request limit
+GEMINI_CIRCUIT_BREAKER_THRESHOLD=5       # Failures before circuit opens
+GEMINI_CIRCUIT_BREAKER_TIMEOUT_MINUTES=5 # Wait time after circuit opens
+GEMINI_RETRY_ATTEMPTS=3                  # Number of retry attempts
+GEMINI_RETRY_BACKOFF_SECONDS=1           # Base backoff duration
 ```
 
 ## Redis Schema
@@ -112,13 +151,82 @@ docker-compose up --build
 
 ## Features
 
+### Core Functionality
 - ✅ Channel-based subscription with # parameters
 - ✅ AI-powered summaries in Portuguese
 - ✅ Pending queue (max 5 articles when no channels)
 - ✅ Validation (update-news requires ≥1 channel)
 - ✅ Docker deployment with Redis persistence
-- ✅ 39 passing tests with full coverage
 - ✅ Enhanced logging for debugging
+
+### Cost Management & Reliability
+- ✅ **Token counting** - Estimates before each request
+- ✅ **Rate limiting** - 10 RPM / 200k TPM (33% safety buffer)
+- ✅ **Circuit breaker** - Opens after 5 failures, 5-min timeout
+- ✅ **Automatic retries** - Up to 3 attempts with exponential backoff
+- ✅ **Smart retry logic** - Retries 429/503, skips 400/401/403/404
+- ✅ **Wait-for-capacity** - Blocks gracefully when limits reached
+- ✅ **Statistics API** - Real-time usage monitoring
+
+### Quality Assurance
+- ✅ 55 passing tests (94% coverage on rate limiting)
+- ✅ Thread-safe concurrent access
+- ✅ Comprehensive error handling
+- ✅ TDD architecture
+
+## Cost Management System
+
+### Overview
+Protects against exceeding Gemini API free tier limits with:
+- Token counting before requests (fallback: chars/4)
+- Request & token rate limiting per minute
+- Circuit breaker pattern for outage protection
+- Exponential backoff retry (1s → 2s → 4s → 8s)
+
+### Gemini Free Tier Limits
+- **15 RPM** (Requests Per Minute)
+- **250k TPM** (Tokens Per Minute)
+
+### Bot Defaults (Conservative)
+- **10 RPM** (33% buffer below limit)
+- **200k TPM** (20% buffer below limit)
+- **4k tokens per request** (reasonable article + summary)
+
+### Error Handling
+**Retryable errors:**
+- 429 (rate limit)
+- 503 (service unavailable)
+- Timeout/deadline exceeded
+- Connection errors
+
+**Non-retryable errors:**
+- 400 (bad request)
+- 401 (unauthorized)
+- 403 (forbidden)
+- 404 (not found)
+
+### Monitoring
+Logs include:
+```
+Rate Limiting: 10 RPM, 200000 TPM, Circuit Breaker: 5 failures
+Token estimate: input=1234, estimated_output=1500, total=2734
+Request successful, recorded 2850 tokens
+```
+
+Access statistics programmatically:
+```go
+stats := summarizer.GetRateLimitStatistics()
+// stats.CurrentWindowRequests, stats.CurrentWindowTokens
+// stats.TotalRequests, stats.TotalTokens, stats.TotalFailures
+// stats.CircuitOpen
+```
+
+### Benefits
+- **Cost protection** - Never exceed free tier
+- **Reliability** - Automatic retries and circuit breaker
+- **Transparency** - Detailed logging and statistics
+- **Configurability** - All limits adjustable via .env
+- **No breaking changes** - Backward compatible
 
 ## License
 

@@ -12,35 +12,43 @@ import (
 
 // MockChannelRepository is a mock for testing
 type MockChannelRepository struct {
-	channels   map[string]bool
-	maxLimit   int
-	addError   error
-	getError   error
+	channelFeeds map[string]map[string]bool // channelID -> set of feedIDs
+	maxLimit     int
+	addError     error
+	getError     error
 }
 
 func NewMockChannelRepository(maxLimit int) *MockChannelRepository {
 	return &MockChannelRepository{
-		channels: make(map[string]bool),
-		maxLimit: maxLimit,
+		channelFeeds: make(map[string]map[string]bool),
+		maxLimit:     maxLimit,
 	}
 }
 
-func (m *MockChannelRepository) AddChannel(channelID string) error {
+func (m *MockChannelRepository) AddChannel(channelID, feedID string) error {
 	if m.addError != nil {
 		return m.addError
 	}
-	if m.channels[channelID] {
-		return fmt.Errorf("channel %s already exists", channelID)
+	if m.channelFeeds[channelID] == nil {
+		if len(m.channelFeeds) >= m.maxLimit {
+			return fmt.Errorf("channel limit reached (%d/%d)", len(m.channelFeeds), m.maxLimit)
+		}
+		m.channelFeeds[channelID] = make(map[string]bool)
 	}
-	if len(m.channels) >= m.maxLimit {
-		return fmt.Errorf("channel limit reached (%d/%d)", len(m.channels), m.maxLimit)
+	if m.channelFeeds[channelID][feedID] {
+		return fmt.Errorf("channel %s already subscribed to feed %s", channelID, feedID)
 	}
-	m.channels[channelID] = true
+	m.channelFeeds[channelID][feedID] = true
 	return nil
 }
 
-func (m *MockChannelRepository) RemoveChannel(channelID string) error {
-	delete(m.channels, channelID)
+func (m *MockChannelRepository) RemoveChannel(channelID, feedID string) error {
+	if m.channelFeeds[channelID] != nil {
+		delete(m.channelFeeds[channelID], feedID)
+		if len(m.channelFeeds[channelID]) == 0 {
+			delete(m.channelFeeds, channelID)
+		}
+	}
 	return nil
 }
 
@@ -48,8 +56,8 @@ func (m *MockChannelRepository) GetAllChannels() ([]string, error) {
 	if m.getError != nil {
 		return nil, m.getError
 	}
-	channels := make([]string, 0, len(m.channels))
-	for ch := range m.channels {
+	channels := make([]string, 0, len(m.channelFeeds))
+	for ch := range m.channelFeeds {
 		channels = append(channels, ch)
 	}
 	return channels, nil
@@ -59,20 +67,109 @@ func (m *MockChannelRepository) GetChannelCount() (int, error) {
 	if m.getError != nil {
 		return 0, m.getError
 	}
-	return len(m.channels), nil
+	return len(m.channelFeeds), nil
 }
 
 func (m *MockChannelRepository) HasChannel(channelID string) (bool, error) {
 	if m.getError != nil {
 		return false, m.getError
 	}
-	return m.channels[channelID], nil
+	return m.channelFeeds[channelID] != nil && len(m.channelFeeds[channelID]) > 0, nil
+}
+
+func (m *MockChannelRepository) GetChannelFeeds(channelID string) ([]string, error) {
+	if m.getError != nil {
+		return nil, m.getError
+	}
+	feeds := []string{}
+	if m.channelFeeds[channelID] != nil {
+		for feedID := range m.channelFeeds[channelID] {
+			feeds = append(feeds, feedID)
+		}
+	}
+	return feeds, nil
+}
+
+func (m *MockChannelRepository) GetFeedChannels(feedID string) ([]string, error) {
+	if m.getError != nil {
+		return nil, m.getError
+	}
+	channels := []string{}
+	for channelID, feeds := range m.channelFeeds {
+		if feeds[feedID] {
+			channels = append(channels, channelID)
+		}
+	}
+	return channels, nil
+}
+
+// MockFeedRepository is a mock for feed testing
+type MockFeedRepository struct {
+	feeds map[string]storage.Feed
+}
+
+func NewMockFeedRepository() *MockFeedRepository {
+	return &MockFeedRepository{
+		feeds: make(map[string]storage.Feed),
+	}
+}
+
+func (m *MockFeedRepository) RegisterFeed(feed storage.Feed) error {
+	if _, exists := m.feeds[feed.ID]; exists {
+		return fmt.Errorf("feed %s already exists", feed.ID)
+	}
+	m.feeds[feed.ID] = feed
+	return nil
+}
+
+func (m *MockFeedRepository) UnregisterFeed(feedID string) error {
+	delete(m.feeds, feedID)
+	return nil
+}
+
+func (m *MockFeedRepository) GetFeed(feedID string) (*storage.Feed, error) {
+	feed, ok := m.feeds[feedID]
+	if !ok {
+		return nil, fmt.Errorf("feed not found")
+	}
+	return &feed, nil
+}
+
+func (m *MockFeedRepository) GetAllFeeds() ([]storage.Feed, error) {
+	feeds := []storage.Feed{}
+	for _, feed := range m.feeds {
+		feeds = append(feeds, feed)
+	}
+	return feeds, nil
+}
+
+func (m *MockFeedRepository) HasFeed(feedID string) (bool, error) {
+	_, ok := m.feeds[feedID]
+	return ok, nil
+}
+
+func (m *MockFeedRepository) SetSchedule(feedID string, times []string) error {
+	feed, ok := m.feeds[feedID]
+	if !ok {
+		return fmt.Errorf("feed not found")
+	}
+	feed.Schedule = times
+	m.feeds[feedID] = feed
+	return nil
+}
+
+func (m *MockFeedRepository) GetSchedule(feedID string) ([]string, error) {
+	feed, ok := m.feeds[feedID]
+	if !ok {
+		return []string{}, nil
+	}
+	return feed.Schedule, nil
 }
 
 // TestNewCommandHandler tests handler creation
 func TestNewCommandHandler(t *testing.T) {
 	repo := NewMockChannelRepository(5)
-	handler := NewCommandHandler(repo, 5)
+	handler := NewCommandHandler(repo, NewMockFeedRepository(), 5)
 
 	assert.NotNil(t, handler)
 	assert.Equal(t, repo, handler.channelRepo)
@@ -81,7 +178,7 @@ func TestNewCommandHandler(t *testing.T) {
 
 // TestHasManageServerPermission tests permission checking
 func TestHasManageServerPermission(t *testing.T) {
-	handler := NewCommandHandler(nil, 5)
+	handler := NewCommandHandler(nil, nil, 5)
 
 	tests := []struct {
 		name        string
@@ -165,7 +262,7 @@ func TestCommandHandler_SetupNews_PermissionValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := NewMockChannelRepository(5)
-			handler := NewCommandHandler(repo, 5)
+			handler := NewCommandHandler(repo, NewMockFeedRepository(), 5)
 
 			// We can't easily test the actual Discord response without a real session,
 			// but we can verify the logic by checking repository state
@@ -238,11 +335,11 @@ func TestCommandHandler_SetupNews_ChannelLimitValidation(t *testing.T) {
 			
 			// Seed existing channels
 			for _, chID := range tt.existingChannels {
-				err := repo.AddChannel(chID)
+				err := repo.AddChannel(chID, "test-feed")
 				require.NoError(t, err)
 			}
 
-			_ = NewCommandHandler(repo, tt.maxLimit)
+			_ = NewCommandHandler(repo, NewMockFeedRepository(), tt.maxLimit)
 
 			// Check if channel already exists
 			hasChannel, err := repo.HasChannel(tt.newChannelID)
@@ -265,7 +362,7 @@ func TestCommandHandler_SetupNews_ChannelLimitValidation(t *testing.T) {
 			}
 
 			// Try to add
-			err = repo.AddChannel(tt.newChannelID)
+			err = repo.AddChannel(tt.newChannelID, "test-feed")
 
 			if tt.shouldSucceed {
 				assert.NoError(t, err)
@@ -325,7 +422,7 @@ func TestCommandHandler_SetupNews_ErrorHandling(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.setupRepo()
-			_ = NewCommandHandler(repo, 5)
+			_ = NewCommandHandler(repo, NewMockFeedRepository(), 5)
 
 			// Verify handler was created (implicitly by not panicking)
 
@@ -338,7 +435,7 @@ func TestCommandHandler_SetupNews_ErrorHandling(t *testing.T) {
 					_, err = repo.GetChannelCount()
 				}
 				if err == nil {
-					err = repo.AddChannel("test")
+					err = repo.AddChannel("test", "test-feed")
 				}
 				assert.Error(t, err, "Should encounter an error in repository operations")
 			}
@@ -351,7 +448,7 @@ func TestCommandHandler_Integration(t *testing.T) {
 	// Setup
 	maxLimit := 3
 	repo := NewMockChannelRepository(maxLimit)
-	handler := NewCommandHandler(repo, maxLimit)
+	handler := NewCommandHandler(repo, NewMockFeedRepository(), maxLimit)
 
 	// Member with proper permissions
 	member := &discordgo.Member{
@@ -371,7 +468,7 @@ func TestCommandHandler_Integration(t *testing.T) {
 		assert.Equal(t, i, count)
 
 		// Add channel
-		err = repo.AddChannel(chID)
+		err = repo.AddChannel(chID, "test-feed")
 		require.NoError(t, err)
 
 		// Verify added
@@ -386,7 +483,7 @@ func TestCommandHandler_Integration(t *testing.T) {
 	assert.Equal(t, maxLimit, count)
 
 	// Try to add one more - should fail
-	err = repo.AddChannel("ch4")
+	err = repo.AddChannel("ch4", "test-feed")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "limit reached")
 
@@ -399,14 +496,14 @@ func TestCommandHandler_Integration(t *testing.T) {
 // TestCommandHandler_ConcurrentAccess tests thread safety via repository
 func TestCommandHandler_ConcurrentAccess(t *testing.T) {
 	repo := NewMockChannelRepository(10)
-	handler := NewCommandHandler(repo, 10)
+	handler := NewCommandHandler(repo, NewMockFeedRepository(), 10)
 
 	// Add channels concurrently
 	done := make(chan bool)
 	for i := 0; i < 5; i++ {
 		go func(id int) {
 			chID := fmt.Sprintf("channel-%d", id)
-			_ = repo.AddChannel(chID)
+			_ = repo.AddChannel(chID, "test-feed")
 			done <- true
 		}(i)
 	}
@@ -462,11 +559,11 @@ func TestCommandHandler_RemoveNews(t *testing.T) {
 
 			// Seed existing channels
 			for _, chID := range tt.existingChannels {
-				err := repo.AddChannel(chID)
+				err := repo.AddChannel(chID, "test-feed")
 				require.NoError(t, err)
 			}
 
-			handler := NewCommandHandler(repo, 10)
+			handler := NewCommandHandler(repo, NewMockFeedRepository(), 10)
 			initialCount, _ := repo.GetChannelCount()
 
 			// Check if channel exists
@@ -480,7 +577,7 @@ func TestCommandHandler_RemoveNews(t *testing.T) {
 			}
 
 			// Try to remove
-			err = repo.RemoveChannel(tt.channelToRemove)
+			err = repo.RemoveChannel(tt.channelToRemove, "test-feed")
 
 			if tt.shouldSucceed {
 				assert.NoError(t, err)
@@ -538,11 +635,11 @@ func TestCommandHandler_ListChannels(t *testing.T) {
 
 			// Seed channels
 			for _, chID := range tt.registeredChannels {
-				err := repo.AddChannel(chID)
+				err := repo.AddChannel(chID, "test-feed")
 				require.NoError(t, err)
 			}
 
-			handler := NewCommandHandler(repo, 10)
+			handler := NewCommandHandler(repo, NewMockFeedRepository(), 10)
 
 			// Get all channels
 			channels, err := repo.GetAllChannels()
@@ -568,12 +665,12 @@ func TestCommandHandler_ListChannels(t *testing.T) {
 // TestCommandHandler_RemoveNews_Integration tests full remove workflow
 func TestCommandHandler_RemoveNews_Integration(t *testing.T) {
 	repo := NewMockChannelRepository(5)
-	handler := NewCommandHandler(repo, 5)
+	handler := NewCommandHandler(repo, NewMockFeedRepository(), 5)
 
 	// Add channels
 	channels := []string{"ch1", "ch2", "ch3"}
 	for _, ch := range channels {
-		err := repo.AddChannel(ch)
+		err := repo.AddChannel(ch, "test-feed")
 		require.NoError(t, err)
 	}
 
@@ -583,7 +680,7 @@ func TestCommandHandler_RemoveNews_Integration(t *testing.T) {
 	assert.Equal(t, 3, count)
 
 	// Remove middle channel
-	err = repo.RemoveChannel("ch2")
+	err = repo.RemoveChannel("ch2", "test-feed")
 	require.NoError(t, err)
 
 	// Verify removed
@@ -631,7 +728,7 @@ func TestCommandHandler_UpdateNews(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := NewMockChannelRepository(5)
-			handler := NewCommandHandler(repo, 5)
+			handler := NewCommandHandler(repo, NewMockFeedRepository(), 5)
 
 			if tt.hasBot {
 				// Create a mock bot (we don't need it functional for this test)
@@ -652,7 +749,7 @@ func TestCommandHandler_UpdateNews(t *testing.T) {
 // TestCommandHandler_SetBot tests setting bot reference
 func TestCommandHandler_SetBot(t *testing.T) {
 	repo := NewMockChannelRepository(5)
-	handler := NewCommandHandler(repo, 5)
+	handler := NewCommandHandler(repo, NewMockFeedRepository(), 5)
 
 	// Initially bot should be nil
 	assert.Nil(t, handler.bot)

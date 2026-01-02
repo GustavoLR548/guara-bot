@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/GustavoLR548/godot-news-bot/internal/ratelimit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -268,4 +270,114 @@ func ExampleMockAISummarizer() {
 
 	fmt.Println(summary)
 	// Output: TL;DR: Godot 4.3 foi lançado com novas funcionalidades!
+}
+
+// TestGeminiSummarizer_RateLimiting tests rate limiting integration
+func TestGeminiSummarizer_RateLimiting(t *testing.T) {
+	summarizer := NewGeminiSummarizer("fake-api-key")
+	
+	// Get initial statistics
+	stats := summarizer.GetRateLimitStatistics()
+	assert.Equal(t, int64(0), stats.TotalRequests)
+	assert.False(t, stats.CircuitOpen)
+}
+
+// TestGeminiSummarizer_WithCustomRateLimit tests custom rate limiting configuration
+func TestGeminiSummarizer_WithCustomRateLimit(t *testing.T) {
+	config := ratelimit.Config{
+		MaxRequestsPerMinute:    5,
+		MaxTokensPerMinute:      100000,
+		MaxTokensPerRequest:     2000,
+		CircuitBreakerThreshold: 3,
+		CircuitBreakerTimeout:   1 * time.Minute,
+		RetryAttempts:           2,
+		RetryBackoffBase:        500 * time.Millisecond,
+	}
+	
+	summarizer := NewGeminiSummarizerWithRateLimit("fake-api-key", config)
+	assert.NotNil(t, summarizer)
+	assert.Equal(t, "gemini-2.5-flash", summarizer.model)
+}
+
+// TestGeminiSummarizer_ResetRateLimits tests rate limit reset
+func TestGeminiSummarizer_ResetRateLimits(t *testing.T) {
+	summarizer := NewGeminiSummarizer("fake-api-key")
+	
+	// Simulate some usage (via recording directly for testing)
+	summarizer.rateLimiter.RecordRequest(1000)
+	summarizer.rateLimiter.RecordRequest(2000)
+	
+	stats := summarizer.GetRateLimitStatistics()
+	assert.Greater(t, stats.TotalRequests, int64(0))
+	
+	// Reset
+	summarizer.ResetRateLimits()
+	
+	stats = summarizer.GetRateLimitStatistics()
+	assert.Equal(t, int64(0), stats.TotalRequests)
+	assert.Equal(t, int64(0), stats.TotalTokens)
+}
+
+// TestGeminiSummarizer_ShouldRetry tests retry logic
+func TestGeminiSummarizer_ShouldRetry(t *testing.T) {
+	summarizer := NewGeminiSummarizer("fake-api-key")
+	
+	tests := []struct {
+		name         string
+		err          error
+		shouldRetry  bool
+	}{
+		{
+			name:        "nil error",
+			err:         nil,
+			shouldRetry: false,
+		},
+		{
+			name:        "rate limit error",
+			err:         fmt.Errorf("429 rate limit exceeded"),
+			shouldRetry: true,
+		},
+		{
+			name:        "service unavailable",
+			err:         fmt.Errorf("503 service temporarily unavailable"),
+			shouldRetry: true,
+		},
+		{
+			name:        "timeout error",
+			err:         fmt.Errorf("context deadline exceeded"),
+			shouldRetry: true,
+		},
+		{
+			name:        "bad request",
+			err:         fmt.Errorf("400 bad request"),
+			shouldRetry: false,
+		},
+		{
+			name:        "unauthorized",
+			err:         fmt.Errorf("401 unauthorized"),
+			shouldRetry: false,
+		},
+		{
+			name:        "not found",
+			err:         fmt.Errorf("404 model not found"),
+			shouldRetry: false,
+		},
+		{
+			name:        "connection reset",
+			err:         fmt.Errorf("connection reset by peer"),
+			shouldRetry: true,
+		},
+		{
+			name:        "unknown error",
+			err:         fmt.Errorf("unknown error occurred"),
+			shouldRetry: true, // Default to retry
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := summarizer.shouldRetry(tt.err)
+			assert.Equal(t, tt.shouldRetry, result)
+		})
+	}
 }

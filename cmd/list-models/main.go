@@ -22,8 +22,10 @@ func main() {
 		log.Fatal("GEMINI_API_KEY is required")
 	}
 
-	fmt.Println("🔍 Listing available Gemini models...\n")
+	fmt.Println("🔍 Listing available Gemini models...")
+	fmt.Println()
 
+	// Use default rate limiting for this utility
 	summarizer := ai.NewGeminiSummarizer(geminiAPIKey)
 	
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

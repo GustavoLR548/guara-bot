@@ -31,14 +31,40 @@ go run ./cmd/bot
 
 ## Discord Commands
 
+### Channel Management
 ```bash
-/setup-news #channel    # Register channel for news
-/remove-news #channel   # Remove channel
-/list-channels          # List all registered channels
-/update-news            # Force check for news
+/setup-news #channel [feed]     # Subscribe channel to feed (defaults to godot-official)
+/remove-news #channel [feed]    # Unsubscribe channel from feed
+/list-channels                  # List all channels and subscriptions
+/update-news [feed]             # Force check specific feed (defaults to godot-official)
+/update-all-news                # Force check all feeds immediately
 ```
 
-All commands require **Manage Server** permission.
+### Feed Management
+```bash
+/register-feed <id> <url> [title] [description]  # Register new RSS feed
+/unregister-feed <id>                            # Remove RSS feed
+/list-feeds                                       # Show all feeds (anyone can use)
+/schedule-feed <id> <times>                      # Set check times (e.g., 09:00,13:00,18:00)
+```
+
+**Examples:**
+```bash
+# Register feeds from different sources
+/register-feed godot https://godotengine.org/rss.xml "Godot Engine" "Game engine news"
+/register-feed techcrunch https://techcrunch.com/feed/ "TechCrunch" "Tech industry news"
+/register-feed hackernews https://hnrss.org/frontpage "Hacker News" "Tech community"
+
+# Subscribe channels to different feeds
+/setup-news #game-dev godot
+/setup-news #tech-news techcrunch
+/setup-news #tech-news hackernews
+
+# Set schedule for a feed (check at 9 AM, 1 PM, and 6 PM)
+/schedule-feed godot 09:00,13:00,18:00
+```
+
+All commands (except `/list-feeds`) require **Manage Server** permission.
 
 ## Testing
 
@@ -56,14 +82,26 @@ go test ./internal/storage -v
 ## Redis Monitoring
 
 ```bash
-# Check channels
-redis-cli SMEMBERS news:channels
+# List all feeds
+redis-cli KEYS "news:feeds:*"
 
-# View last article
-redis-cli GET news:last_guid
+# View feed details
+redis-cli HGETALL news:feeds:godot-official
 
-# View pending queue
-redis-cli LRANGE news:pending_queue 0 -1
+# Check feed schedule
+redis-cli LRANGE news:feeds:godot-official:schedule 0 -1
+
+# View channels subscribed to a feed
+redis-cli SMEMBERS news:channels:CHANNEL_ID:feeds
+
+# View last article for a feed
+redis-cli GET news:history:godot-official:last
+
+# View pending queue for a feed
+redis-cli LRANGE news:history:godot-official:pending 0 -1
+
+# Check all registered channels
+redis-cli KEYS "news:channels:*:feeds"
 ```
 
 ## Docker Management
@@ -94,9 +132,17 @@ redis-cli ping  # Should return PONG
 ```
 
 **No news posting:**
-- Check `/list-channels` - at least 1 channel must be registered
-- Use `/update-news` to force check
+- Check `/list-channels` - at least 1 channel must be subscribed
+- Check `/list-feeds` - verify feeds are registered
+- Verify feed schedules with `/list-feeds` (or set with `/schedule-feed`)
+- Use `/update-news` to force check all feeds
 - View logs: `docker-compose logs bot`
+
+**Feed not updating:**
+- Check feed URL is accessible: `curl <feed-url>`
+- Verify schedule is set: `/list-feeds`
+- Check if it's the scheduled time (bot checks every minute)
+- For immediate testing, feeds without schedules check every 15 minutes
 
 ## Environment Variables
 
@@ -104,9 +150,18 @@ redis-cli ping  # Should return PONG
 DISCORD_TOKEN=your_token           # Required
 GEMINI_API_KEY=your_key           # Required
 MAX_CHANNELS_LIMIT=5              # Optional (default: 5)
-CHECK_INTERVAL_MINUTES=15         # Optional (default: 15)
+CHECK_INTERVAL_MINUTES=15         # Optional (fallback for feeds without schedules)
 REDIS_URL=localhost:6379          # Optional
 REDIS_PASSWORD=                   # Optional
+
+# Rate Limiting (Optional - Gemini Free Tier Protection)
+GEMINI_MAX_REQUESTS_PER_MINUTE=10
+GEMINI_MAX_TOKENS_PER_MINUTE=200000
+GEMINI_MAX_TOKENS_PER_REQUEST=4000
+GEMINI_CIRCUIT_BREAKER_THRESHOLD=5
+GEMINI_CIRCUIT_BREAKER_TIMEOUT_MINUTES=5
+GEMINI_RETRY_ATTEMPTS=3
+GEMINI_RETRY_BACKOFF_SECONDS=1
 ```
 
 ## Bot Invite URL

@@ -12,6 +12,7 @@ import (
 	"github.com/GustavoLR548/godot-news-bot/internal/ai"
 	"github.com/GustavoLR548/godot-news-bot/internal/bot"
 	"github.com/GustavoLR548/godot-news-bot/internal/news"
+	"github.com/GustavoLR548/godot-news-bot/internal/ratelimit"
 	"github.com/GustavoLR548/godot-news-bot/internal/storage"
 	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
@@ -52,7 +53,22 @@ func main() {
 	checkIntervalMinutes := getEnvAsInt("CHECK_INTERVAL_MINUTES", defaultCheckIntervalMinutes)
 	checkInterval := time.Duration(checkIntervalMinutes) * time.Minute
 
-	log.Printf("Starting Godot News Bot (Max Channels: %d, Check Interval: %v)", maxChannels, checkInterval)
+	// Configure rate limiting
+	rateLimitConfig := ratelimit.Config{
+		MaxRequestsPerMinute:    getEnvAsInt("GEMINI_MAX_REQUESTS_PER_MINUTE", 10),
+		MaxTokensPerMinute:      getEnvAsInt("GEMINI_MAX_TOKENS_PER_MINUTE", 200000),
+		MaxTokensPerRequest:     getEnvAsInt("GEMINI_MAX_TOKENS_PER_REQUEST", 4000),
+		CircuitBreakerThreshold: getEnvAsInt("GEMINI_CIRCUIT_BREAKER_THRESHOLD", 5),
+		CircuitBreakerTimeout:   time.Duration(getEnvAsInt("GEMINI_CIRCUIT_BREAKER_TIMEOUT_MINUTES", 5)) * time.Minute,
+		RetryAttempts:           getEnvAsInt("GEMINI_RETRY_ATTEMPTS", 3),
+		RetryBackoffBase:        time.Duration(getEnvAsInt("GEMINI_RETRY_BACKOFF_SECONDS", 1)) * time.Second,
+	}
+
+	log.Printf("Starting Guara Bot - RSS News Aggregator (Max Channels: %d, Check Interval: %v)", maxChannels, checkInterval)
+	log.Printf("Rate Limiting: %d RPM, %d TPM, Circuit Breaker: %d failures", 
+		rateLimitConfig.MaxRequestsPerMinute, 
+		rateLimitConfig.MaxTokensPerMinute,
+		rateLimitConfig.CircuitBreakerThreshold)
 
 	// Initialize Redis client
 	redisClient := redis.NewClient(&redis.Options{
@@ -77,12 +93,32 @@ func main() {
 	}
 
 	historyRepo := storage.NewRedisHistoryRepository(redisClient)
+	feedRepo := storage.NewRedisFeedRepository(redisClient)
+
+	// Register default feed for backward compatibility
+	defaultFeed := storage.Feed{
+		ID:          "godot-official",
+		URL:         rssURL,
+		Title:       "Godot Engine Official",
+		Description: "Official Godot Engine news and announcements",
+		AddedAt:     time.Now(),
+		Schedule:    []string{}, // Empty schedule for now (will use check interval)
+	}
+	
+	// Only register if it doesn't exist
+	if has, _ := feedRepo.HasFeed(defaultFeed.ID); !has {
+		if err := feedRepo.RegisterFeed(defaultFeed); err != nil {
+			log.Printf("Warning: Failed to register default feed: %v", err)
+		} else {
+			log.Printf("Registered default feed: %s", defaultFeed.ID)
+		}
+	}
 
 	// Initialize news fetcher
 	newsFetcher := news.NewRSSFetcher(rssURL)
 
-	// Initialize AI summarizer
-	aiSummarizer := ai.NewGeminiSummarizer(geminiAPIKey)
+	// Initialize AI summarizer with rate limiting
+	aiSummarizer := ai.NewGeminiSummarizerWithRateLimit(geminiAPIKey, rateLimitConfig)
 
 	// Create Discord session
 	dg, err := discordgo.New("Bot " + discordToken)
@@ -94,7 +130,7 @@ func main() {
 	dg.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages
 
 	// Create command handler
-	commandHandler := bot.NewCommandHandler(channelRepo, maxChannels)
+	commandHandler := bot.NewCommandHandler(channelRepo, feedRepo, maxChannels)
 
 	// Register commands and handlers
 	dg.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
@@ -125,6 +161,7 @@ func main() {
 		aiSummarizer,
 		channelRepo,
 		historyRepo,
+		feedRepo,
 		checkInterval,
 	)
 
