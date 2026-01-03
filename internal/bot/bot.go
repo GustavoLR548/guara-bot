@@ -328,8 +328,8 @@ func (b *Bot) processAndPostArticle(ctx context.Context, feed *storage.Feed, fet
 		summariesByLanguage[lang] = summary
 		log.Printf("Summary generated in %s: %s", lang, article.Title)
 
-		// Create embed message with feed info
-		embed := b.createNewsEmbed(feed, article, summary)
+		// Create embed message with feed info (language-specific)
+		embed := b.createNewsEmbed(feed, article, summary, lang)
 
 		// Broadcast to all channels using this language
 		successCount := 0
@@ -366,7 +366,23 @@ func getLanguageList(channelsByLanguage map[string][]string) []string {
 }
 
 // createNewsEmbed creates a Discord embed for the news article with feed info
-func (b *Bot) createNewsEmbed(feed *storage.Feed, article *news.Article, summary string) *discordgo.MessageEmbed {
+func (b *Bot) createNewsEmbed(feed *storage.Feed, article *news.Article, summary string, language string) *discordgo.MessageEmbed {
+	// Translations for "Read full article" link
+	readFullArticle := map[string]string{
+		"pt-BR": "Ler artigo completo",
+		"en":    "Read full article",
+		"es":    "Leer artículo completo",
+		"fr":    "Lire l'article complet",
+		"de":    "Vollständigen Artikel lesen",
+		"ja":    "記事全文を読む",
+	}
+	
+	// Get translation or fallback to English
+	linkText, ok := readFullArticle[language]
+	if !ok {
+		linkText = readFullArticle["en"]
+	}
+	
 	// Use feed description for footer, or just feed title if no description
 	footerText := feed.Title
 	if feed.Description != "" {
@@ -384,8 +400,8 @@ func (b *Bot) createNewsEmbed(feed *storage.Feed, article *news.Article, summary
 		Timestamp: article.PublishDate.Format(time.RFC3339),
 		Fields: []*discordgo.MessageEmbedField{
 			{
-				Name:   "🔗 Link Completo",
-				Value:  fmt.Sprintf("[Ler artigo completo](%s)", article.Link),
+				Name:   "🔗",
+				Value:  fmt.Sprintf("[%s](%s)", linkText, article.Link),
 				Inline: false,
 			},
 		},
