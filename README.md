@@ -8,7 +8,6 @@ A versatile Discord bot that monitors multiple RSS feeds and posts AI-generated 
 - ⏰ **Time-based scheduling** - Set specific check times per feed (HH:MM format)
 - 🤖 Automatic RSS monitoring with flexible per-feed scheduling
 - 🧠 AI-powered summaries using Google Gemini 2.5 Flash
-- 🇧🇷 Summaries in Brazilian Portuguese
 - 📢 Multi-channel support with configurable limits
 - 🔗 Many-to-many architecture: channels can subscribe to multiple feeds
 - 🎯 Per-feed customization: different schedules, different channels
