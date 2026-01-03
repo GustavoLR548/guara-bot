@@ -16,6 +16,8 @@ import (
 type AISummarizer interface {
 	// Summarize generates a TL;DR summary in Brazilian Portuguese
 	Summarize(ctx context.Context, text string) (string, error)
+	// SummarizeInLanguage generates a TL;DR summary in the specified language
+	SummarizeInLanguage(ctx context.Context, text string, languageCode string) (string, error)
 }
 
 // GeminiSummarizer implements AISummarizer using Google's Gemini API
@@ -66,8 +68,14 @@ func (s *GeminiSummarizer) ListAvailableModels(ctx context.Context) ([]string, e
 	return models, nil
 }
 
-// Summarize generates a TL;DR summary in Brazilian Portuguese with rate limiting
+// Summarize generates a TL;DR summary in English (default language) with rate limiting
 func (s *GeminiSummarizer) Summarize(ctx context.Context, text string) (string, error) {
+	// Default to English for backward compatibility
+	return s.SummarizeInLanguage(ctx, text, "en")
+}
+
+// SummarizeDeprecated is the old implementation (kept for reference)
+func (s *GeminiSummarizer) SummarizeDeprecated(ctx context.Context, text string) (string, error) {
 	if text == "" {
 		return "", fmt.Errorf("empty text provided")
 	}
@@ -216,6 +224,184 @@ func (s *GeminiSummarizer) attemptSummarize(ctx context.Context, model *genai.Ge
 	}
 
 	return summary, nil
+}
+
+// LanguageInfo contains information about a supported language
+type LanguageInfo struct {
+	Code         string
+	Name         string
+	NativeName   string
+	Instructions string
+}
+
+// getLanguageInfo returns language configuration for a given code
+func getLanguageInfo(code string) LanguageInfo {
+	languages := map[string]LanguageInfo{
+		"pt-BR": {
+			Code:         "pt-BR",
+			Name:         "Português Brasileiro",
+			NativeName:   "Português (Brasil)",
+			Instructions: "Use linguagem técnica mas acessível. Evite anglicismos desnecessários.",
+		},
+		"en": {
+			Code:         "en",
+			Name:         "English",
+			NativeName:   "English",
+			Instructions: "Use clear technical language. Be concise and professional.",
+		},
+		"es": {
+			Code:         "es",
+			Name:         "Español",
+			NativeName:   "Español",
+			Instructions: "Usa lenguaje técnico pero accesible. Sé claro y profesional.",
+		},
+		"fr": {
+			Code:         "fr",
+			Name:         "Français",
+			NativeName:   "Français",
+			Instructions: "Utilisez un langage technique mais accessible. Soyez clair et professionnel.",
+		},
+		"de": {
+			Code:         "de",
+			Name:         "Deutsch",
+			NativeName:   "Deutsch",
+			Instructions: "Verwenden Sie klare technische Sprache. Seien Sie präzise und professionell.",
+		},
+		"ja": {
+			Code:         "ja",
+			Name:         "日本語 (Japanese)",
+			NativeName:   "日本語",
+			Instructions: "技術的でありながら分かりやすい言語を使用してください。明確でプロフェッショナルに。",
+		},
+	}
+
+	if info, ok := languages[code]; ok {
+		return info
+	}
+
+	// Default to English if unknown language
+	log.Printf("Unknown language code: %s, defaulting to English", code)
+	return languages["en"]
+}
+
+// GetSupportedLanguages returns a list of all supported language codes
+func GetSupportedLanguages() []string {
+	return []string{"pt-BR", "en", "es", "fr", "de", "ja"}
+}
+
+// GetLanguageName returns the display name for a language code
+func GetLanguageName(code string) string {
+	return getLanguageInfo(code).NativeName
+}
+
+// SummarizeInLanguage generates a TL;DR summary in the specified language with rate limiting
+func (s *GeminiSummarizer) SummarizeInLanguage(ctx context.Context, text string, languageCode string) (string, error) {
+	if text == "" {
+		return "", fmt.Errorf("empty text provided")
+	}
+
+	log.Printf("Starting summary generation in language %s (input length: %d chars)", languageCode, len(text))
+
+	// Get language info
+	langInfo := getLanguageInfo(languageCode)
+
+	// Create client
+	client, err := genai.NewClient(ctx, option.WithAPIKey(s.apiKey))
+	if err != nil {
+		return "", fmt.Errorf("failed to create Gemini client: %w", err)
+	}
+	defer client.Close()
+
+	model := client.GenerativeModel(s.model)
+
+	// Build language-specific prompt
+	fullPrompt := fmt.Sprintf(`Crie um resumo informativo em %s para desenvolvedores sobre o seguinte artigo. 
+O resumo deve ter 3-5 frases, destacando as principais novidades, melhorias ou mudanças importantes. 
+Seja claro, técnico e objetivo.
+
+IMPORTANTE: 
+- Responda APENAS em %s
+- NÃO inclua nenhum preâmbulo, introdução ou frase como "Aqui está um resumo"
+- Comece DIRETAMENTE com o conteúdo do resumo
+
+%s
+
+Artigo:
+%s`,
+		langInfo.Name,
+		langInfo.Name,
+		langInfo.Instructions,
+		text,
+	)
+
+	// Count tokens before making request
+	tokenResp, err := model.CountTokens(ctx, genai.Text(fullPrompt))
+	if err != nil {
+		log.Printf("WARNING: Failed to count tokens: %v (proceeding anyway)", err)
+		tokenResp = &genai.CountTokensResponse{
+			TotalTokens: int32(len(fullPrompt) / 4),
+		}
+	}
+
+	inputTokens := int(tokenResp.TotalTokens)
+	estimatedOutputTokens := 1500
+	estimatedTotal := inputTokens + estimatedOutputTokens
+
+	log.Printf("Token estimate for %s: input=%d, estimated_output=%d, total=%d", 
+		languageCode, inputTokens, estimatedOutputTokens, estimatedTotal)
+
+	// Check rate limits before making request
+	can, err := s.rateLimiter.CanMakeRequest(estimatedTotal)
+	if !can {
+		log.Printf("Rate limit check failed for %s: %v", languageCode, err)
+		// Try waiting for capacity
+		waitErr := s.rateLimiter.WaitForCapacity(ctx, estimatedTotal)
+		if waitErr != nil {
+			return "", fmt.Errorf("rate limit exceeded and wait failed: %w", err)
+		}
+		log.Printf("Rate limit capacity available after waiting for %s", languageCode)
+	}
+
+	// Retry logic with exponential backoff
+	var summary string
+	var lastErr error
+	maxRetries := s.rateLimiter.GetConfig().RetryAttempts
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := s.rateLimiter.CalculateBackoff(attempt - 1)
+			log.Printf("Retry attempt %d/%d for %s after %v backoff", attempt, maxRetries, languageCode, backoff)
+			
+			select {
+			case <-time.After(backoff):
+				// Continue with retry
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+
+		summary, lastErr = s.attemptSummarize(ctx, model, fullPrompt)
+		
+		if lastErr == nil {
+			// Success - record request with actual token usage
+			actualTokens := inputTokens + (len(summary) / 4)
+			s.rateLimiter.RecordRequest(actualTokens)
+			log.Printf("Request successful for %s, recorded %d tokens", languageCode, actualTokens)
+			return summary, nil
+		}
+
+		// Record failure for circuit breaker
+		s.rateLimiter.RecordFailure()
+		log.Printf("Attempt %d failed for %s: %v", attempt, languageCode, lastErr)
+
+		// Check if we should retry
+		if !s.shouldRetry(lastErr) {
+			log.Printf("Error is not retryable for %s, aborting", languageCode)
+			return "", lastErr
+		}
+	}
+
+	return "", fmt.Errorf("failed after %d attempts for %s: %w", maxRetries+1, languageCode, lastErr)
 }
 
 // shouldRetry determines if an error is retryable

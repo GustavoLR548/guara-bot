@@ -160,6 +160,55 @@ func (h *CommandHandler) RegisterCommands(s *discordgo.Session) error {
 				},
 			},
 		},
+		{
+			Name:        "set-language",
+			Description: "Set the default language for news summaries in this server",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "language",
+					Description: "Select language",
+					Required:    true,
+					Choices: []*discordgo.ApplicationCommandOptionChoice{
+						{Name: "🇧🇷 Português (Brasil)", Value: "pt-BR"},
+						{Name: "🇺🇸 English", Value: "en"},
+						{Name: "🇪🇸 Español", Value: "es"},
+						{Name: "🇫🇷 Français", Value: "fr"},
+						{Name: "🇩🇪 Deutsch", Value: "de"},
+						{Name: "🇯🇵 日本語", Value: "ja"},
+					},
+				},
+			},
+		},
+		{
+			Name:        "set-channel-language",
+			Description: "Set a specific language for news summaries in a channel",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionChannel,
+					Name:        "channel",
+					Description: "The channel to configure",
+					Required:    true,
+					ChannelTypes: []discordgo.ChannelType{
+						discordgo.ChannelTypeGuildText,
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "language",
+					Description: "Select language (leave empty to use server default)",
+					Required:    false,
+					Choices: []*discordgo.ApplicationCommandOptionChoice{
+						{Name: "🇧🇷 Português (Brasil)", Value: "pt-BR"},
+						{Name: "🇺🇸 English", Value: "en"},
+						{Name: "🇪🇸 Español", Value: "es"},
+						{Name: "🇫🇷 Français", Value: "fr"},
+						{Name: "🇩🇪 Deutsch", Value: "de"},
+						{Name: "🇯🇵 日本語", Value: "ja"},
+					},
+				},
+			},
+		},
 	}
 
 	for _, cmd := range commands {
@@ -195,158 +244,220 @@ func (h *CommandHandler) HandleCommands(s *discordgo.Session) {
 			h.handleListFeeds(s, i)
 		case "schedule-feed":
 			h.handleScheduleFeed(s, i)
+		case "set-language":
+			h.handleSetLanguage(s, i)
+		case "set-channel-language":
+			h.handleSetChannelLanguage(s, i)
 		}
 	})
 }
 
 // handleSetupNews handles the /setup-news command
 func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	log.Printf("[SETUP-NEWS] Command triggered by user %s in guild %s", i.Member.User.ID, i.GuildID)
+	
 	// Check if command was used in a guild (server)
 	if i.GuildID == "" {
-		h.respondError(s, i, "Este comando só pode ser usado em um servidor.")
+		log.Printf("[SETUP-NEWS] ERROR: Command used outside guild")
+		h.respondError(s, i, "This command can only be used in a server.")
 		return
 	}
 
 	// Get the member who executed the command
 	member := i.Member
 	if member == nil {
-		h.respondError(s, i, "Não foi possível verificar suas permissões.")
+		log.Printf("[SETUP-NEWS] ERROR: Could not get member")
+		h.respondError(s, i, "Could not verify your permissions.")
 		return
 	}
 
 	// Check if user has "Manage Server" permission
 	if !h.hasManageServerPermission(member) {
-		h.respondError(s, i, "❌ Você precisa da permissão **Gerenciar Servidor** para usar este comando.")
+		log.Printf("[SETUP-NEWS] ERROR: User %s lacks Manage Server permission", member.User.ID)
+		h.respondError(s, i, "❌ You need the **Manage Server** permission to use this command.")
 		return
 	}
 
 	// Get the channel parameter
 	options := i.ApplicationCommandData().Options
+	log.Printf("[SETUP-NEWS] Received %d options", len(options))
 	if len(options) == 0 {
-		h.respondError(s, i, "❌ Você precisa especificar um canal.")
+		log.Printf("[SETUP-NEWS] ERROR: No channel option provided")
+		h.respondError(s, i, "❌ You need to specify a channel.")
 		return
 	}
 
 	// Extract channel ID from the option
 	channelValue := options[0].ChannelValue(s)
 	if channelValue == nil {
-		h.respondError(s, i, "❌ Canal inválido.")
+		log.Printf("[SETUP-NEWS] ERROR: Failed to get channel value")
+		h.respondError(s, i, "❌ Invalid channel.")
 		return
 	}
 	
 	channelID := channelValue.ID
+	log.Printf("[SETUP-NEWS] Channel selected: %s (ID: %s, Type: %d)", channelValue.Name, channelID, channelValue.Type)
 
 	// Get feed identifier (default to godot-official)
 	feedID := "godot-official"
 	if len(options) > 1 {
 		feedID = options[1].StringValue()
+		log.Printf("[SETUP-NEWS] Custom feed ID provided: %s", feedID)
+	} else {
+		log.Printf("[SETUP-NEWS] Using default feed ID: %s", feedID)
 	}
 
-	// Verify feed exists
+	// Respond immediately to avoid timeout
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Flags: discordgo.MessageFlagsEphemeral,
+		},
+	})
+	if err != nil {
+		log.Printf("[SETUP-NEWS] ERROR: Failed to send initial response: %v", err)
+		return
+	}
+
+	// Now do the work
+	log.Printf("[SETUP-NEWS] Checking if feed exists: %s", feedID)
 	hasFeed, err := h.feedRepo.HasFeed(feedID)
 	if err != nil {
-		log.Printf("Error checking feed: %v", err)
-		h.respondError(s, i, "Erro ao verificar o feed.")
+		log.Printf("[SETUP-NEWS] ERROR: Failed to check feed existence: %v", err)
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: "❌ Error checking feed.",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		})
 		return
 	}
 	if !hasFeed {
-		h.respondError(s, i, fmt.Sprintf("❌ Feed '%s' não encontrado. Use /list-feeds para ver os feeds disponíveis.", feedID))
+		log.Printf("[SETUP-NEWS] ERROR: Feed not found: %s", feedID)
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: fmt.Sprintf("❌ Feed '%s' not found. Use `/list-feeds` to see available feeds.", feedID),
+			Flags:   discordgo.MessageFlagsEphemeral,
+		})
 		return
 	}
+	log.Printf("[SETUP-NEWS] Feed exists: %s", feedID)
 
 	// Verify it's a text channel
 	if channelValue.Type != discordgo.ChannelTypeGuildText {
-		h.respondError(s, i, "❌ Apenas canais de texto podem receber notícias.")
+		log.Printf("[SETUP-NEWS] ERROR: Invalid channel type: %d (expected %d)", channelValue.Type, discordgo.ChannelTypeGuildText)
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: "❌ Only text channels can receive news.",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		})
 		return
 	}
 
 	// Check if channel is already subscribed to this feed
+	log.Printf("[SETUP-NEWS] Checking if channel %s is already subscribed to feed %s", channelID, feedID)
 	feeds, err := h.channelRepo.GetChannelFeeds(channelID)
 	if err != nil {
-		log.Printf("Error checking channel feeds: %v", err)
-		h.respondError(s, i, "Erro ao verificar o canal.")
+		log.Printf("[SETUP-NEWS] ERROR: Failed to get channel feeds: %v", err)
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: "❌ Error checking channel.",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		})
 		return
 	}
+	log.Printf("[SETUP-NEWS] Channel %s has %d feeds: %v", channelID, len(feeds), feeds)
 
 	for _, f := range feeds {
 		if f == feedID {
-			h.respondError(s, i, fmt.Sprintf("⚠️ Este canal já está inscrito no feed '%s'.", feedID))
+			log.Printf("[SETUP-NEWS] ERROR: Channel %s already subscribed to feed %s", channelID, feedID)
+			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+				Content: fmt.Sprintf("⚠️ This channel is already subscribed to feed '%s'.", feedID),
+				Flags:   discordgo.MessageFlagsEphemeral,
+			})
 			return
 		}
 	}
 
 	// Check if limit would be exceeded (count unique channels)
+	log.Printf("[SETUP-NEWS] Checking channel count")
 	count, err := h.channelRepo.GetChannelCount()
 	if err != nil {
-		log.Printf("Error getting channel count: %v", err)
-		h.respondError(s, i, "Erro ao verificar o limite de canais.")
+		log.Printf("[SETUP-NEWS] ERROR: Failed to get channel count: %v", err)
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: "❌ Error checking channel limit.",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		})
 		return
 	}
+	log.Printf("[SETUP-NEWS] Current channel count: %d, Max: %d, New channel: %v", count, h.maxLimit, len(feeds) == 0)
 
 	if count >= h.maxLimit && len(feeds) == 0 {
 		// Only enforce limit for new channels, not for adding feeds to existing channels
-		h.respondError(s, i, fmt.Sprintf("❌ Limite de canais atingido (%d/%d). Não é possível adicionar mais canais.", count, h.maxLimit))
+		log.Printf("[SETUP-NEWS] ERROR: Channel limit reached (%d/%d)", count, h.maxLimit)
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: fmt.Sprintf("❌ Channel limit reached (%d/%d). Cannot add more channels.", count, h.maxLimit),
+			Flags:   discordgo.MessageFlagsEphemeral,
+		})
 		return
 	}
 
 	// Add the channel-feed association
+	log.Printf("[SETUP-NEWS] Adding channel %s for feed %s", channelID, feedID)
 	if err := h.channelRepo.AddChannel(channelID, feedID); err != nil {
-		log.Printf("Error adding channel: %v", err)
-		h.respondError(s, i, "Erro ao registrar o canal.")
+		log.Printf("[SETUP-NEWS] ERROR: Failed to add channel: %v", err)
+		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: "❌ Error registering channel.",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		})
 		return
 	}
+	log.Printf("[SETUP-NEWS] SUCCESS: Channel added")
 
 	// Get feed info for response
 	feed, err := h.feedRepo.GetFeed(feedID)
 	if err != nil {
-		log.Printf("Error getting feed info: %v", err)
+		log.Printf("[SETUP-NEWS] Warning: Failed to get feed details: %v", err)
 		// Continue anyway, feed exists
 		feed = &storage.Feed{ID: feedID, Title: feedID}
 	}
 
-	// Success response
-	h.respondSuccess(s, i, fmt.Sprintf(
-		"✅ **Canal configurado com sucesso!**\n\n<#%s> agora receberá notícias de **%s** (%s).",
-		channelID,
-		feed.Title,
-		feedID,
-	))
+	// Send success message
+	s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		Content: fmt.Sprintf("✅ **Channel configured successfully!**\n\n<#%s> will now receive news from **%s** (%s).", channelID, feed.Title, feedID),
+		Flags:   discordgo.MessageFlagsEphemeral,
+	})
 
-	log.Printf("Channel %s subscribed to feed %s in guild %s", channelID, feedID, i.GuildID)
+	log.Printf("[SETUP-NEWS] SUCCESS: Channel %s subscribed to feed %s in guild %s", channelID, feedID, i.GuildID)
 }
 
 // handleRemoveNews handles the /remove-news command
 func (h *CommandHandler) handleRemoveNews(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Check if command was used in a guild (server)
 	if i.GuildID == "" {
-		h.respondError(s, i, "Este comando só pode ser usado em um servidor.")
+		h.respondError(s, i, "This command can only be used in a server.")
 		return
 	}
 
 	// Get the member who executed the command
 	member := i.Member
 	if member == nil {
-		h.respondError(s, i, "Não foi possível verificar suas permissões.")
+		h.respondError(s, i, "Could not verify your permissions.")
 		return
 	}
 
 	// Check if user has "Manage Server" permission
 	if !h.hasManageServerPermission(member) {
-		h.respondError(s, i, "❌ Você precisa da permissão **Gerenciar Servidor** para usar este comando.")
+		h.respondError(s, i, "❌ You need the **Manage Server** permission to use this command.")
 		return
 	}
 
 	// Get the channel parameter
 	options := i.ApplicationCommandData().Options
 	if len(options) == 0 {
-		h.respondError(s, i, "❌ Você precisa especificar um canal.")
+		h.respondError(s, i, "❌ You need to specify a channel.")
 		return
 	}
 
 	// Extract channel ID from the option
 	channelValue := options[0].ChannelValue(s)
 	if channelValue == nil {
-		h.respondError(s, i, "❌ Canal inválido.")
+		h.respondError(s, i, "❌ Invalid channel.")
 		return
 	}
 	
@@ -362,12 +473,12 @@ func (h *CommandHandler) handleRemoveNews(s *discordgo.Session, i *discordgo.Int
 	feeds, err := h.channelRepo.GetChannelFeeds(channelID)
 	if err != nil {
 		log.Printf("Error checking channel feeds: %v", err)
-		h.respondError(s, i, "Erro ao verificar o canal.")
+		h.respondError(s, i, "Error checking channel.")
 		return
 	}
 
 	if len(feeds) == 0 {
-		h.respondError(s, i, "⚠️ Este canal não está inscrito em nenhum feed.")
+		h.respondError(s, i, "⚠️ This channel is not subscribed to any feed.")
 		return
 	}
 
@@ -377,7 +488,7 @@ func (h *CommandHandler) handleRemoveNews(s *discordgo.Session, i *discordgo.Int
 		for _, f := range feeds {
 			feedList += fmt.Sprintf("• %s\n", f)
 		}
-		h.respondError(s, i, fmt.Sprintf("⚠️ Este canal está inscrito em múltiplos feeds. Especifique qual remover:\n\n%s", feedList))
+		h.respondError(s, i, fmt.Sprintf("⚠️ This channel is subscribed to multiple feeds. Specify which one to remove:\n\n%s", feedList))
 		return
 	}
 
@@ -396,20 +507,20 @@ func (h *CommandHandler) handleRemoveNews(s *discordgo.Session, i *discordgo.Int
 	}
 
 	if !isSubscribed {
-		h.respondError(s, i, fmt.Sprintf("⚠️ Este canal não está inscrito no feed '%s'.", feedID))
+		h.respondError(s, i, fmt.Sprintf("⚠️ This channel is not subscribed to feed '%s'.", feedID))
 		return
 	}
 
 	// Remove the channel-feed association
 	if err := h.channelRepo.RemoveChannel(channelID, feedID); err != nil {
 		log.Printf("Error removing channel: %v", err)
-		h.respondError(s, i, "Erro ao remover o canal.")
+		h.respondError(s, i, "Error removing channel.")
 		return
 	}
 
 	// Success response
 	h.respondSuccess(s, i, fmt.Sprintf(
-		"✅ **Canal removido com sucesso!**\n\n<#%s> não receberá mais notícias de **%s**.",
+		"✅ **Channel removed successfully!**\n\n<#%s> will no longer receive news from **%s**.",
 		channelID,
 		feedID,
 	))
@@ -421,20 +532,20 @@ func (h *CommandHandler) handleRemoveNews(s *discordgo.Session, i *discordgo.Int
 func (h *CommandHandler) handleListChannels(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Check if command was used in a guild (server)
 	if i.GuildID == "" {
-		h.respondError(s, i, "Este comando só pode ser usado em um servidor.")
+		h.respondError(s, i, "This command can only be used in a server.")
 		return
 	}
 
 	// Get the member who executed the command
 	member := i.Member
 	if member == nil {
-		h.respondError(s, i, "Não foi possível verificar suas permissões.")
+		h.respondError(s, i, "Could not verify your permissions.")
 		return
 	}
 
 	// Check if user has "Manage Server" permission
 	if !h.hasManageServerPermission(member) {
-		h.respondError(s, i, "❌ Você precisa da permissão **Gerenciar Servidor** para usar este comando.")
+		h.respondError(s, i, "❌ You need the **Manage Server** permission to use this command.")
 		return
 	}
 
@@ -442,25 +553,25 @@ func (h *CommandHandler) handleListChannels(s *discordgo.Session, i *discordgo.I
 	channels, err := h.channelRepo.GetAllChannels()
 	if err != nil {
 		log.Printf("Error getting channels: %v", err)
-		h.respondError(s, i, "Erro ao buscar os canais.")
+		h.respondError(s, i, "Error fetching channels.")
 		return
 	}
 
 	if len(channels) == 0 {
-		h.respondSuccess(s, i, "📋 **Nenhum canal registrado**\n\nUse `/setup-news` em um canal para começar a receber notícias.")
+		h.respondSuccess(s, i, "📋 **No registered channels**\n\nUse `/setup-news` in a channel to start receiving news.")
 		return
 	}
 
 	// Build channel list
 	var response string
-	response = fmt.Sprintf("📋 **Canais Registrados** (%d/%d)\n\n", len(channels), h.maxLimit)
+	response = fmt.Sprintf("📋 **Registered Channels** (%d/%d)\n\n", len(channels), h.maxLimit)
 
 	for i, channelID := range channels {
 		// Use simple channel mention format
 		response += fmt.Sprintf("%d. <#%s>\n", i+1, channelID)
 	}
 
-	response += fmt.Sprintf("\n💡 Use `/remove-news` em um canal para removê-lo da lista.")
+	response += fmt.Sprintf("\n💡 Use `/remove-news` in a channel to remove it from the list.")
 
 	h.respondSuccess(s, i, response)
 
@@ -471,20 +582,20 @@ func (h *CommandHandler) handleListChannels(s *discordgo.Session, i *discordgo.I
 func (h *CommandHandler) handleUpdateNews(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Check if command was used in a guild (server)
 	if i.GuildID == "" {
-		h.respondError(s, i, "Este comando só pode ser usado em um servidor.")
+		h.respondError(s, i, "This command can only be used in a server.")
 		return
 	}
 
 	// Get the member who executed the command
 	member := i.Member
 	if member == nil {
-		h.respondError(s, i, "Não foi possível verificar suas permissões.")
+		h.respondError(s, i, "Could not verify your permissions.")
 		return
 	}
 
 	// Check for Manage Server permission
 	if !h.hasManageServerPermission(member) {
-		h.respondError(s, i, "❌ Você precisa da permissão 'Gerenciar Servidor' para usar este comando.")
+		h.respondError(s, i, "❌ You need the 'Manage Server' permission to use this command.")
 		return
 	}
 
@@ -499,11 +610,11 @@ func (h *CommandHandler) handleUpdateNews(s *discordgo.Session, i *discordgo.Int
 	hasFeed, err := h.feedRepo.HasFeed(feedID)
 	if err != nil {
 		log.Printf("Error checking feed: %v", err)
-		h.respondError(s, i, "❌ Erro ao verificar feed.")
+		h.respondError(s, i, "❌ Error checking feed.")
 		return
 	}
 	if !hasFeed {
-		h.respondError(s, i, fmt.Sprintf("❌ Feed não encontrado: %s\n\nUse `/list-feeds` para ver os feeds disponíveis.", feedID))
+		h.respondError(s, i, fmt.Sprintf("❌ Feed not found: %s\n\nUse `/list-feeds` to see available feeds.", feedID))
 		return
 	}
 
@@ -511,18 +622,18 @@ func (h *CommandHandler) handleUpdateNews(s *discordgo.Session, i *discordgo.Int
 	channels, err := h.channelRepo.GetFeedChannels(feedID)
 	if err != nil {
 		log.Printf("Error getting feed channels: %v", err)
-		h.respondError(s, i, "❌ Erro ao verificar canais registrados.")
+		h.respondError(s, i, "❌ Error checking registered channels.")
 		return
 	}
 
 	if len(channels) == 0 {
-		h.respondError(s, i, fmt.Sprintf("⚠️ Nenhum canal registrado para o feed: %s\n\nUse `/setup-news` para configurar um canal primeiro.", feedID))
+		h.respondError(s, i, fmt.Sprintf("⚠️ No channels registered for feed: %s\n\nUse `/setup-news` to configure a channel first.", feedID))
 		return
 	}
 
 	// Check if bot is set
 	if h.bot == nil {
-		h.respondError(s, i, "❌ Bot não está configurado corretamente.")
+		h.respondError(s, i, "❌ Bot is not configured correctly.")
 		return
 	}
 
@@ -537,7 +648,7 @@ func (h *CommandHandler) handleUpdateNews(s *discordgo.Session, i *discordgo.Int
 	respondErr := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("🔄 Verificando novidades de **%s**...", feed.Title),
+			Content: fmt.Sprintf("🔄 Checking for updates from **%s**...", feed.Title),
 			Flags:   discordgo.MessageFlagsEphemeral,
 		},
 	})
@@ -552,9 +663,9 @@ func (h *CommandHandler) handleUpdateNews(s *discordgo.Session, i *discordgo.Int
 		
 		var followupMessage string
 		if result {
-			followupMessage = fmt.Sprintf("✅ Verificação de **%s** concluída! Se houver novidades, elas foram publicadas nos canais registrados.", feed.Title)
+			followupMessage = fmt.Sprintf("✅ Check for **%s** completed! If there are any updates, they were posted to registered channels.", feed.Title)
 		} else {
-			followupMessage = fmt.Sprintf("ℹ️ Nenhuma novidade encontrada em **%s** ou houve um erro. Verifique os logs para mais detalhes.", feed.Title)
+			followupMessage = fmt.Sprintf("ℹ️ No updates found in **%s** or there was an error. Check logs for more details.", feed.Title)
 		}
 
 		// Send follow-up message
@@ -574,20 +685,20 @@ func (h *CommandHandler) handleUpdateNews(s *discordgo.Session, i *discordgo.Int
 func (h *CommandHandler) handleUpdateAllNews(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Check if command was used in a guild (server)
 	if i.GuildID == "" {
-		h.respondError(s, i, "Este comando só pode ser usado em um servidor.")
+		h.respondError(s, i, "This command can only be used in a server.")
 		return
 	}
 
 	// Get the member who executed the command
 	member := i.Member
 	if member == nil {
-		h.respondError(s, i, "Não foi possível verificar suas permissões.")
+		h.respondError(s, i, "Could not verify your permissions.")
 		return
 	}
 
 	// Check for Manage Server permission
 	if !h.hasManageServerPermission(member) {
-		h.respondError(s, i, "❌ Você precisa da permissão 'Gerenciar Servidor' para usar este comando.")
+		h.respondError(s, i, "❌ You need the 'Manage Server' permission to use this command.")
 		return
 	}
 
@@ -595,18 +706,18 @@ func (h *CommandHandler) handleUpdateAllNews(s *discordgo.Session, i *discordgo.
 	count, err := h.channelRepo.GetChannelCount()
 	if err != nil {
 		log.Printf("Error getting channel count: %v", err)
-		h.respondError(s, i, "❌ Erro ao verificar canais registrados.")
+		h.respondError(s, i, "❌ Error checking registered channels.")
 		return
 	}
 
 	if count == 0 {
-		h.respondError(s, i, "⚠️ Nenhum canal registrado para receber notícias.\n\nUse `/setup-news` para configurar um canal primeiro.")
+		h.respondError(s, i, "⚠️ No channels registered to receive news.\n\nUse `/setup-news` to configure a channel first.")
 		return
 	}
 
 	// Check if bot is set
 	if h.bot == nil {
-		h.respondError(s, i, "❌ Bot não está configurado corretamente.")
+		h.respondError(s, i, "❌ Bot is not configured correctly.")
 		return
 	}
 
@@ -614,7 +725,7 @@ func (h *CommandHandler) handleUpdateAllNews(s *discordgo.Session, i *discordgo.
 	respondErr := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: "🔄 Verificando novidades de todos os feeds...",
+			Content: "🔄 Checking for updates from all feeds...",
 			Flags:   discordgo.MessageFlagsEphemeral,
 		},
 	})
@@ -629,9 +740,9 @@ func (h *CommandHandler) handleUpdateAllNews(s *discordgo.Session, i *discordgo.
 		
 		var followupMessage string
 		if result {
-			followupMessage = "✅ Verificação de todos os feeds concluída! Se houver novidades, elas foram publicadas nos canais registrados."
+			followupMessage = "✅ Check for all feeds completed! If there are any updates, they were posted to registered channels."
 		} else {
-			followupMessage = "ℹ️ Nenhuma novidade encontrada ou houve um erro. Verifique os logs para mais detalhes."
+			followupMessage = "ℹ️ No updates found or there was an error. Check logs for more details."
 		}
 
 		// Send follow-up message
@@ -651,21 +762,21 @@ func (h *CommandHandler) handleUpdateAllNews(s *discordgo.Session, i *discordgo.
 func (h *CommandHandler) handleRegisterFeed(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Check guild
 	if i.GuildID == "" {
-		h.respondError(s, i, "Este comando só pode ser usado em um servidor.")
+		h.respondError(s, i, "This command can only be used in a server.")
 		return
 	}
 
 	// Check permissions
 	member := i.Member
 	if member == nil || !h.hasManageServerPermission(member) {
-		h.respondError(s, i, "❌ Você precisa da permissão **Gerenciar Servidor** para usar este comando.")
+		h.respondError(s, i, "❌ You need the **Manage Server** permission to use this command.")
 		return
 	}
 
 	// Get parameters
 	options := i.ApplicationCommandData().Options
 	if len(options) < 2 {
-		h.respondError(s, i, "❌ Você precisa especificar identifier e url.")
+		h.respondError(s, i, "❌ You need to specify identifier and url.")
 		return
 	}
 
@@ -686,12 +797,12 @@ func (h *CommandHandler) handleRegisterFeed(s *discordgo.Session, i *discordgo.I
 	exists, err := h.feedRepo.HasFeed(feedID)
 	if err != nil {
 		log.Printf("Error checking feed: %v", err)
-		h.respondError(s, i, "Erro ao verificar o feed.")
+		h.respondError(s, i, "Error checking feed.")
 		return
 	}
 
 	if exists {
-		h.respondError(s, i, fmt.Sprintf("❌ Feed '%s' já está registrado.", feedID))
+		h.respondError(s, i, fmt.Sprintf("❌ Feed '%s' is already registered.", feedID))
 		return
 	}
 
@@ -706,12 +817,12 @@ func (h *CommandHandler) handleRegisterFeed(s *discordgo.Session, i *discordgo.I
 
 	if err := h.feedRepo.RegisterFeed(feed); err != nil {
 		log.Printf("Error registering feed: %v", err)
-		h.respondError(s, i, "Erro ao registrar o feed.")
+		h.respondError(s, i, "Error registering feed.")
 		return
 	}
 
 	h.respondSuccess(s, i, fmt.Sprintf(
-		"✅ **Feed registrado com sucesso!**\n\n**ID:** %s\n**Título:** %s\n**URL:** %s",
+		"✅ **Feed registered successfully!**\n\n**ID:** %s\n**Title:** %s\n**URL:** %s",
 		feedID, title, feedURL,
 	))
 
@@ -722,21 +833,21 @@ func (h *CommandHandler) handleRegisterFeed(s *discordgo.Session, i *discordgo.I
 func (h *CommandHandler) handleUnregisterFeed(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Check guild
 	if i.GuildID == "" {
-		h.respondError(s, i, "Este comando só pode ser usado em um servidor.")
+		h.respondError(s, i, "This command can only be used in a server.")
 		return
 	}
 
 	// Check permissions
 	member := i.Member
 	if member == nil || !h.hasManageServerPermission(member) {
-		h.respondError(s, i, "❌ Você precisa da permissão **Gerenciar Servidor** para usar este comando.")
+		h.respondError(s, i, "❌ You need the **Manage Server** permission to use this command.")
 		return
 	}
 
 	// Get parameter
 	options := i.ApplicationCommandData().Options
 	if len(options) == 0 {
-		h.respondError(s, i, "❌ Você precisa especificar o identifier do feed.")
+		h.respondError(s, i, "❌ You need to specify the feed identifier.")
 		return
 	}
 
@@ -746,12 +857,12 @@ func (h *CommandHandler) handleUnregisterFeed(s *discordgo.Session, i *discordgo
 	exists, err := h.feedRepo.HasFeed(feedID)
 	if err != nil {
 		log.Printf("Error checking feed: %v", err)
-		h.respondError(s, i, "Erro ao verificar o feed.")
+		h.respondError(s, i, "Error checking feed.")
 		return
 	}
 
 	if !exists {
-		h.respondError(s, i, fmt.Sprintf("❌ Feed '%s' não encontrado.", feedID))
+		h.respondError(s, i, fmt.Sprintf("❌ Feed '%s' not found.", feedID))
 		return
 	}
 
@@ -764,7 +875,7 @@ func (h *CommandHandler) handleUnregisterFeed(s *discordgo.Session, i *discordgo
 	// Unregister feed
 	if err := h.feedRepo.UnregisterFeed(feedID); err != nil {
 		log.Printf("Error unregistering feed: %v", err)
-		h.respondError(s, i, "Erro ao remover o feed.")
+		h.respondError(s, i, "Error removing feed.")
 		return
 	}
 
@@ -776,11 +887,11 @@ func (h *CommandHandler) handleUnregisterFeed(s *discordgo.Session, i *discordgo
 	}
 
 	h.respondSuccess(s, i, fmt.Sprintf(
-		"✅ **Feed removido com sucesso!**\n\nFeed '%s' foi removido%s.",
+		"✅ **Feed removed successfully!**\n\nFeed '%s' was removed%s.",
 		feedID,
 		func() string {
 			if len(channels) > 0 {
-				return fmt.Sprintf(" e desvinculado de %d canal(is)", len(channels))
+				return fmt.Sprintf(" and unlinked from %d channel(s)", len(channels))
 			}
 			return ""
 		}(),
@@ -795,17 +906,17 @@ func (h *CommandHandler) handleListFeeds(s *discordgo.Session, i *discordgo.Inte
 	feeds, err := h.feedRepo.GetAllFeeds()
 	if err != nil {
 		log.Printf("Error getting feeds: %v", err)
-		h.respondError(s, i, "Erro ao listar feeds.")
+		h.respondError(s, i, "Error listing feeds.")
 		return
 	}
 
 	if len(feeds) == 0 {
-		h.respondError(s, i, "ℹ️ Nenhum feed registrado.")
+		h.respondError(s, i, "ℹ️ No feeds registered.")
 		return
 	}
 
 	// Build response
-	response := "📰 **Feeds Registrados**\n\n"
+	response := "📰 **Registered Feeds**\n\n"
 	for _, feed := range feeds {
 		response += fmt.Sprintf("**%s** (`%s`)\n", feed.Title, feed.ID)
 		response += fmt.Sprintf("└ URL: %s\n", feed.URL)
@@ -819,13 +930,13 @@ func (h *CommandHandler) handleListFeeds(s *discordgo.Session, i *discordgo.Inte
 				}
 				times += t
 			}
-			response += fmt.Sprintf("└ Horários: %s\n", times)
+			response += fmt.Sprintf("└ Schedule: %s\n", times)
 		}
 		
 		// Show channel count
 		channels, err := h.channelRepo.GetFeedChannels(feed.ID)
 		if err == nil {
-			response += fmt.Sprintf("└ Canais inscritos: %d\n", len(channels))
+			response += fmt.Sprintf("└ Subscribed channels: %d\n", len(channels))
 		}
 		response += "\n"
 	}
@@ -837,21 +948,21 @@ func (h *CommandHandler) handleListFeeds(s *discordgo.Session, i *discordgo.Inte
 func (h *CommandHandler) handleScheduleFeed(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	// Check guild
 	if i.GuildID == "" {
-		h.respondError(s, i, "Este comando só pode ser usado em um servidor.")
+		h.respondError(s, i, "This command can only be used in a server.")
 		return
 	}
 
 	// Check permissions
 	member := i.Member
 	if member == nil || !h.hasManageServerPermission(member) {
-		h.respondError(s, i, "❌ Você precisa da permissão **Gerenciar Servidor** para usar este comando.")
+		h.respondError(s, i, "❌ You need the **Manage Server** permission to use this command.")
 		return
 	}
 
 	// Get parameters
 	options := i.ApplicationCommandData().Options
 	if len(options) < 2 {
-		h.respondError(s, i, "❌ Você precisa especificar identifier e times.")
+		h.respondError(s, i, "❌ You need to specify identifier and times.")
 		return
 	}
 
@@ -862,12 +973,12 @@ func (h *CommandHandler) handleScheduleFeed(s *discordgo.Session, i *discordgo.I
 	exists, err := h.feedRepo.HasFeed(feedID)
 	if err != nil {
 		log.Printf("Error checking feed: %v", err)
-		h.respondError(s, i, "Erro ao verificar o feed.")
+		h.respondError(s, i, "Error checking feed.")
 		return
 	}
 
 	if !exists {
-		h.respondError(s, i, fmt.Sprintf("❌ Feed '%s' não encontrado.", feedID))
+		h.respondError(s, i, fmt.Sprintf("❌ Feed '%s' not found.", feedID))
 		return
 	}
 
@@ -882,7 +993,7 @@ func (h *CommandHandler) handleScheduleFeed(s *discordgo.Session, i *discordgo.I
 	// Set schedule
 	if err := h.feedRepo.SetSchedule(feedID, times); err != nil {
 		log.Printf("Error setting schedule: %v", err)
-		h.respondError(s, i, fmt.Sprintf("❌ Erro ao configurar horários: %v", err))
+		h.respondError(s, i, fmt.Sprintf("❌ Error setting schedule: %v", err))
 		return
 	}
 
@@ -895,7 +1006,7 @@ func (h *CommandHandler) handleScheduleFeed(s *discordgo.Session, i *discordgo.I
 	}
 
 	h.respondSuccess(s, i, fmt.Sprintf(
-		"✅ **Horários configurados!**\n\nFeed '%s' será verificado nos seguintes horários:\n%s",
+		"✅ **Schedule configured!**\n\nFeed '%s' will be checked at the following times:\n%s",
 		feedID, timesDisplay,
 	))
 
@@ -998,5 +1109,154 @@ func (h *CommandHandler) respondSuccess(s *discordgo.Session, i *discordgo.Inter
 	})
 	if err != nil {
 		log.Printf("Error sending success response: %v", err)
+	}
+}
+
+// handleSetLanguage handles the /set-language command
+func (h *CommandHandler) handleSetLanguage(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	log.Printf("[SET-LANGUAGE] Command triggered by user %s in guild %s", i.Member.User.ID, i.GuildID)
+
+	// Defer response immediately to prevent "unknown interaction" error
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+	if err != nil {
+		log.Printf("[SET-LANGUAGE] ERROR: Failed to send deferred response: %v", err)
+		return
+	}
+
+	// Check if command was used in a guild
+	if i.GuildID == "" {
+		h.followUpError(s, i, "This command can only be used in a server.")
+		return
+	}
+
+	// Check permissions
+	if !h.hasManageServerPermission(i.Member) {
+		h.followUpError(s, i, "❌ You need the **Manage Server** permission to use this command.")
+		return
+	}
+
+	// Get language parameter
+	options := i.ApplicationCommandData().Options
+	if len(options) == 0 {
+		h.followUpError(s, i, "❌ You need to specify a language.")
+		return
+	}
+
+	languageCode := options[0].StringValue()
+	log.Printf("[SET-LANGUAGE] Setting guild %s language to: %s", i.GuildID, languageCode)
+
+	// Save guild language preference
+	if err := h.channelRepo.SetGuildLanguage(i.GuildID, languageCode); err != nil {
+		log.Printf("[SET-LANGUAGE] ERROR: Failed to save language: %v", err)
+		h.followUpError(s, i, fmt.Sprintf("❌ Error saving language preference: %v", err))
+		return
+	}
+
+	languageFlag := getLanguageFlag(languageCode)
+	h.followUpSuccess(s, i, fmt.Sprintf("✅ Server default language set to: %s %s\n\nIndividual channels can have different languages using `/set-channel-language`.", languageFlag, languageCode))
+}
+
+// handleSetChannelLanguage handles the /set-channel-language command
+func (h *CommandHandler) handleSetChannelLanguage(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	log.Printf("[SET-CHANNEL-LANGUAGE] Command triggered by user %s in guild %s", i.Member.User.ID, i.GuildID)
+
+	// Defer response immediately
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+	if err != nil {
+		log.Printf("[SET-CHANNEL-LANGUAGE] ERROR: Failed to send deferred response: %v", err)
+		return
+	}
+
+	// Check if command was used in a guild
+	if i.GuildID == "" {
+		h.followUpError(s, i, "This command can only be used in a server.")
+		return
+	}
+
+	// Check permissions
+	if !h.hasManageServerPermission(i.Member) {
+		h.followUpError(s, i, "❌ You need the **Manage Server** permission to use this command.")
+		return
+	}
+
+	// Get parameters
+	options := i.ApplicationCommandData().Options
+	if len(options) == 0 {
+		h.followUpError(s, i, "❌ You need to specify a channel.")
+		return
+	}
+
+	channelValue := options[0].ChannelValue(s)
+	if channelValue == nil {
+		h.followUpError(s, i, "❌ Invalid channel.")
+		return
+	}
+
+	channelID := channelValue.ID
+
+	// Check if language is provided
+	if len(options) < 2 {
+		// Remove channel-specific language (use guild default)
+		if err := h.channelRepo.SetChannelLanguage(channelID, ""); err != nil {
+			log.Printf("[SET-CHANNEL-LANGUAGE] ERROR: Failed to clear channel language: %v", err)
+			h.followUpError(s, i, fmt.Sprintf("❌ Error clearing channel language: %v", err))
+			return
+		}
+		h.followUpSuccess(s, i, fmt.Sprintf("✅ Channel <#%s> will now use the server's default language.", channelID))
+		return
+	}
+
+	languageCode := options[1].StringValue()
+	log.Printf("[SET-CHANNEL-LANGUAGE] Setting channel %s language to: %s", channelID, languageCode)
+
+	// Save channel language preference
+	if err := h.channelRepo.SetChannelLanguage(channelID, languageCode); err != nil {
+		log.Printf("[SET-CHANNEL-LANGUAGE] ERROR: Failed to save language: %v", err)
+		h.followUpError(s, i, fmt.Sprintf("❌ Error saving channel language: %v", err))
+		return
+	}
+
+	languageFlag := getLanguageFlag(languageCode)
+	h.followUpSuccess(s, i, fmt.Sprintf("✅ Channel <#%s> language set to: %s %s", channelID, languageFlag, languageCode))
+}
+
+// getLanguageFlag returns the emoji flag for a language code
+func getLanguageFlag(code string) string {
+	flags := map[string]string{
+		"pt-BR": "🇧🇷",
+		"en":    "🇺🇸",
+		"es":    "🇪🇸",
+		"fr":    "🇫🇷",
+		"de":    "🇩🇪",
+		"ja":    "🇯🇵",
+	}
+	if flag, ok := flags[code]; ok {
+		return flag
+	}
+	return "🌐"
+}
+
+// followUpError sends an error follow-up message
+func (h *CommandHandler) followUpError(s *discordgo.Session, i *discordgo.InteractionCreate, message string) {
+	_, err := s.FollowupMessageCreate(i.Interaction, false, &discordgo.WebhookParams{
+		Content: message,
+		Flags:   discordgo.MessageFlagsEphemeral,
+	})
+	if err != nil {
+		log.Printf("Error sending follow-up error: %v", err)
+	}
+}
+
+// followUpSuccess sends a success follow-up message
+func (h *CommandHandler) followUpSuccess(s *discordgo.Session, i *discordgo.InteractionCreate, message string) {
+	_, err := s.FollowupMessageCreate(i.Interaction, false, &discordgo.WebhookParams{
+		Content: message,
+	})
+	if err != nil {
+		log.Printf("Error sending follow-up success: %v", err)
 	}
 }

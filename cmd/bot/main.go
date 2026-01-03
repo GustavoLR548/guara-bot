@@ -105,13 +105,19 @@ func main() {
 		Schedule:    []string{}, // Empty schedule for now (will use check interval)
 	}
 	
+	log.Printf("Checking if default feed exists: %s", defaultFeed.ID)
 	// Only register if it doesn't exist
-	if has, _ := feedRepo.HasFeed(defaultFeed.ID); !has {
+	if has, err := feedRepo.HasFeed(defaultFeed.ID); err != nil {
+		log.Printf("ERROR: Failed to check if feed exists: %v", err)
+	} else if !has {
+		log.Printf("Default feed does not exist, registering: %s", defaultFeed.ID)
 		if err := feedRepo.RegisterFeed(defaultFeed); err != nil {
-			log.Printf("Warning: Failed to register default feed: %v", err)
+			log.Printf("ERROR: Failed to register default feed: %v", err)
 		} else {
-			log.Printf("Registered default feed: %s", defaultFeed.ID)
+			log.Printf("SUCCESS: Registered default feed: %s (URL: %s)", defaultFeed.ID, defaultFeed.URL)
 		}
+	} else {
+		log.Printf("Default feed already exists: %s", defaultFeed.ID)
 	}
 
 	// Initialize news fetcher

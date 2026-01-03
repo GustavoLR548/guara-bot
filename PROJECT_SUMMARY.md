@@ -22,6 +22,8 @@ graph TB
 - Slash command handlers for feed and channel management
 - Time-based scheduling per feed (HH:MM format)
 - Multi-feed support with independent processing
+- Multilingual support with smart channel grouping
+- Language preference hierarchy: channel → guild → en (English)
 - 5-article pending queue per feed
 - Permission validation (Manage Server required)
 
@@ -29,6 +31,7 @@ graph TB
 - Redis persistence with 5-second timeout
 - Channel-Feed many-to-many relationships (SET)
 - Feed repository with CRUD operations (HASH)
+- Language preferences at guild and channel levels (STRING)
 - Per-feed schedules (LIST)
 - Per-feed pending queues (LIST, max 5 articles)
 - Per-feed article history (STRING with 90-day TTL)
@@ -41,9 +44,11 @@ graph TB
 
 **AI Summarization** (`internal/ai/`)
 - Google Gemini 2.5 Flash
+- Multilingual generation in 6 languages (pt-BR, en, es, fr, de, ja)
+- Language-specific prompts with tone instructions
 - 1500 max tokens, 5-minute timeout
 - Enhanced logging (input length, API timing, finish reason)
-- Portuguese output without preambles
+- Smart grouping: one summary per language, shared across channels
 
 **RSS Processor** (`internal/news/`)
 - gofeed v1.3.0 for parsing
@@ -94,6 +99,8 @@ go test -cover ./... # With coverage
 | `/unregister-feed <id>` | Remove RSS feed | Manage Server |
 | `/list-feeds` | Show all registered feeds with schedules | Anyone |
 | `/schedule-feed <id> <times>` | Set check times (e.g., 09:00,13:00,18:00) | Manage Server |
+| `/set-language <language>` | Set default language for server (pt-BR/en/es/fr/de/ja) | Manage Server |
+| `/set-channel-language #channel [lang]` | Override language for specific channel | Manage Server |
 
 ## Configuration
 
@@ -121,11 +128,27 @@ GEMINI_RETRY_BACKOFF_SECONDS=1           # Base backoff duration
 ## Redis Schema
 
 ```
-news:channels              → SET of channel IDs
-news:pending_queue         → LIST of pending article GUIDs (max 5)
-news:history:{guid}        → STRING "posted" (90-day TTL)
-news:last_guid             → STRING of last processed GUID
+# Channels & Feeds
+news:channels                     → SET of channel IDs
+news:channels:{channelID}:feeds   → SET of feed identifiers
+news:feeds:{feedID}:channels      → SET of channel IDs
+
+# Feed Management
+news:feeds:{feedID}               → HASH (url, title, description, added_at)
+news:feeds:{feedID}:schedule      → LIST of check times (HH:MM)
+news:feeds:{feedID}:pending       → LIST of article GUIDs (max 5)
+news:feeds:{feedID}:history:{guid}→ STRING "posted" (90-day TTL)
+
+# Language Preferences
+news:guilds:{guildID}:language    → STRING (language code, default: pt-BR)
+news:channels:{channelID}:language→ STRING (optional override)
 ```
+
+### Language Detection Flow
+1. Check `news:channels:{channelID}:language` for channel-specific override
+2. If not set, get guild ID and check `news:guilds:{guildID}:language`
+3. If not set, default to "en" (English)
+4. Group channels by language before generating summaries
 
 ## Development
 
@@ -153,7 +176,9 @@ docker-compose up --build
 
 ### Core Functionality
 - ✅ Channel-based subscription with # parameters
-- ✅ AI-powered summaries in Portuguese
+- ✅ AI-powered summaries in 6 languages (pt-BR, en, es, fr, de, ja)
+- ✅ Multilingual support with smart channel grouping
+- ✅ Language preferences at guild and channel levels
 - ✅ Pending queue (max 5 articles when no channels)
 - ✅ Validation (update-news requires ≥1 channel)
 - ✅ Docker deployment with Redis persistence

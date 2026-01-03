@@ -185,4 +185,4 @@ Contributions are welcome! Please:
 
 ## License
 
-MIT License - Feel free to use and modify!
+MIT

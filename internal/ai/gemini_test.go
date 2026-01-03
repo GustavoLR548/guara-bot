@@ -13,12 +13,20 @@ import (
 
 // MockAISummarizer is a mock implementation of AISummarizer for testing
 type MockAISummarizer struct {
-	SummarizeFunc func(ctx context.Context, text string) (string, error)
+	SummarizeFunc          func(ctx context.Context, text string) (string, error)
+	SummarizeInLanguageFunc func(ctx context.Context, text string, languageCode string) (string, error)
 }
 
 func (m *MockAISummarizer) Summarize(ctx context.Context, text string) (string, error) {
 	if m.SummarizeFunc != nil {
 		return m.SummarizeFunc(ctx, text)
+	}
+	return "", fmt.Errorf("not implemented")
+}
+
+func (m *MockAISummarizer) SummarizeInLanguage(ctx context.Context, text string, languageCode string) (string, error) {
+	if m.SummarizeInLanguageFunc != nil {
+		return m.SummarizeInLanguageFunc(ctx, text, languageCode)
 	}
 	return "", fmt.Errorf("not implemented")
 }

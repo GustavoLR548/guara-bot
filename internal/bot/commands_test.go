@@ -103,6 +103,26 @@ func (m *MockChannelRepository) GetFeedChannels(feedID string) ([]string, error)
 	return channels, nil
 }
 
+func (m *MockChannelRepository) SetChannelLanguage(channelID, languageCode string) error {
+	// Mock implementation - just return nil
+	return nil
+}
+
+func (m *MockChannelRepository) GetChannelLanguage(channelID string) (string, error) {
+	// Mock implementation - return empty (use guild default)
+	return "", nil
+}
+
+func (m *MockChannelRepository) SetGuildLanguage(guildID, languageCode string) error {
+	// Mock implementation - just return nil
+	return nil
+}
+
+func (m *MockChannelRepository) GetGuildLanguage(guildID string) (string, error) {
+	// Mock implementation - return en as default
+	return "en", nil
+}
+
 // MockFeedRepository is a mock for feed testing
 type MockFeedRepository struct {
 	feeds map[string]storage.Feed

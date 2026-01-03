@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -37,8 +38,12 @@ type ChannelRepository interface {
 	// HasChannel checks if a channel is registered for any feed
 	HasChannel(channelID string) (bool, error)
 	// GetFeedChannels returns all channels subscribed to a specific feed
-	GetFeedChannels(feedID string) ([]string, error)
-}
+	GetFeedChannels(feedID string) ([]string, error)	
+	// Language preferences
+	SetChannelLanguage(channelID, languageCode string) error
+	GetChannelLanguage(channelID string) (string, error)
+	SetGuildLanguage(guildID, languageCode string) error
+	GetGuildLanguage(guildID string) (string, error)}
 
 // Feed represents an RSS feed configuration
 type Feed struct {
@@ -279,6 +284,63 @@ func (r *RedisChannelRepository) GetFeedChannels(feedID string) ([]string, error
 	return feedChannels, nil
 }
 
+// Language preference methods
+func (r *RedisChannelRepository) SetChannelLanguage(channelID, languageCode string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	
+	key := fmt.Sprintf("news:channels:%s:language", channelID)
+	log.Printf("[CHANNEL-REPO] Setting language for channel %s: %s", channelID, languageCode)
+	return r.client.Set(ctx, key, languageCode, 0).Err()
+}
+
+func (r *RedisChannelRepository) GetChannelLanguage(channelID string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	
+	key := fmt.Sprintf("news:channels:%s:language", channelID)
+	
+	result, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		log.Printf("[CHANNEL-REPO] No language set for channel %s, will use guild default", channelID)
+		return "", nil // No language set
+	}
+	if err != nil {
+		return "", err
+	}
+	
+	log.Printf("[CHANNEL-REPO] Channel %s language: %s", channelID, result)
+	return result, nil
+}
+
+func (r *RedisChannelRepository) SetGuildLanguage(guildID, languageCode string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	
+	key := fmt.Sprintf("news:guilds:%s:language", guildID)
+	log.Printf("[GUILD-REPO] Setting language for guild %s: %s", guildID, languageCode)
+	return r.client.Set(ctx, key, languageCode, 0).Err()
+}
+
+func (r *RedisChannelRepository) GetGuildLanguage(guildID string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	
+	key := fmt.Sprintf("news:guilds:%s:language", guildID)
+	
+	result, err := r.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		log.Printf("[GUILD-REPO] No language set for guild %s, using default (en)", guildID)
+		return "en", nil // Default to English
+	}
+	if err != nil {
+		return "en", err
+	}
+	
+	log.Printf("[GUILD-REPO] Guild %s language: %s", guildID, result)
+	return result, nil
+}
+
 // RedisHistoryRepository implements HistoryRepository using Redis
 type RedisHistoryRepository struct {
 	client *redis.Client
@@ -440,13 +502,16 @@ func (r *RedisFeedRepository) RegisterFeed(feed Feed) error {
 	defer cancel()
 
 	feedKey := feedsPrefix + feed.ID
+	log.Printf("[FEED-REPO] Registering feed: %s (URL: %s, Key: %s)", feed.ID, feed.URL, feedKey)
 
 	// Check if feed already exists
 	exists, err := r.client.Exists(ctx, feedKey).Result()
 	if err != nil {
+		log.Printf("[FEED-REPO] ERROR: Failed to check feed existence: %v", err)
 		return fmt.Errorf("failed to check feed existence: %w", err)
 	}
 	if exists > 0 {
+		log.Printf("[FEED-REPO] ERROR: Feed already exists: %s", feed.ID)
 		return fmt.Errorf("feed %s already exists", feed.ID)
 	}
 
@@ -460,6 +525,7 @@ func (r *RedisFeedRepository) RegisterFeed(feed Feed) error {
 	}
 
 	if err := r.client.HSet(ctx, feedKey, feedData).Err(); err != nil {
+		log.Printf("[FEED-REPO] ERROR: Failed to store feed: %v", err)
 		return fmt.Errorf("failed to register feed: %w", err)
 	}
 
@@ -468,10 +534,12 @@ func (r *RedisFeedRepository) RegisterFeed(feed Feed) error {
 		if err := r.SetSchedule(feed.ID, feed.Schedule); err != nil {
 			// Cleanup feed if schedule fails
 			r.client.Del(ctx, feedKey)
+			log.Printf("[FEED-REPO] ERROR: Failed to set schedule: %v", err)
 			return fmt.Errorf("failed to set schedule: %w", err)
 		}
 	}
 
+	log.Printf("[FEED-REPO] SUCCESS: Feed registered: %s", feed.ID)
 	return nil
 }
 
@@ -597,12 +665,17 @@ func (r *RedisFeedRepository) HasFeed(feedID string) (bool, error) {
 	defer cancel()
 
 	feedKey := feedsPrefix + feedID
+	log.Printf("[FEED-REPO] Checking if feed exists: %s (Key: %s)", feedID, feedKey)
+	
 	exists, err := r.client.Exists(ctx, feedKey).Result()
 	if err != nil {
+		log.Printf("[FEED-REPO] ERROR: Failed to check feed: %v", err)
 		return false, fmt.Errorf("failed to check feed: %w", err)
 	}
 
-	return exists > 0, nil
+	hasIt := exists > 0
+	log.Printf("[FEED-REPO] Feed %s exists: %v (Redis EXISTS returned: %d)", feedID, hasIt, exists)
+	return hasIt, nil
 }
 
 // SetSchedule sets check times for a feed

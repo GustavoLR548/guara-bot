@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - TBD
+
+### Added
+- **Multilingual Support**: Native AI-generated summaries in 6 languages
+  - Supported languages: Portuguese (BR), English, Spanish, French, German, Japanese
+  - `/set-language` - Set default language for entire server
+  - `/set-channel-language` - Override language for specific channels
+  - Smart grouping: generates one summary per language, shared across channels
+  - Language detection hierarchy: channel override → guild default → en (English) fallback
+  - Redis storage: `news:guilds:{id}:language` and `news:channels:{id}:language`
+- **Language Management**:
+  - Language preferences stored at guild and channel levels
+  - Automatic fallback to English if primary language generation fails
+  - Language-specific prompts with culturally appropriate instructions
+  - Flag emojis in command choices for better UX
+
+### Changed
+- **Article Processing**: Refactored to support multilingual distribution
+  - Groups channels by language preference before generating summaries
+  - Caches guild language preferences to avoid redundant lookups
+  - Logs language detection for each channel
+  - Reports success count per language
+- **AI Interface**: Extended with `SummarizeInLanguage()` method
+  - Backward compatible: `Summarize()` defaults to English
+  - Language-specific prompts with tone and style instructions
+  - Helper functions: `GetSupportedLanguages()`, `GetLanguageName()`
+- **Default Language**: Changed from Portuguese (pt-BR) to English (en) for broader international appeal
+
+### Technical Details
+- **No Breaking Changes**: Existing deployments default to English (more international)
+- **Performance**: Smart grouping reduces API calls (1 per language vs 1 per channel)
+- **Architecture**: LanguageInfo struct with Code, Name, NativeName, Instructions
+- **Commands**: 11 total commands (added 2 language management commands)
+
 ## [1.3.0] - TBD
 
 ### Changed

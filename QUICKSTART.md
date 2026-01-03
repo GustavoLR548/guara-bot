@@ -48,6 +48,20 @@ go run ./cmd/bot
 /schedule-feed <id> <times>                      # Set check times (e.g., 09:00,13:00,18:00)
 ```
 
+### Language Configuration
+```bash
+/set-language <language>                 # Set server default language
+/set-channel-language #channel [language] # Override language for specific channel
+```
+
+**Supported Languages:**
+- 🇧🇷 `pt-BR` - Português (Brasil)
+- 🇺🇸 `en` - English
+- 🇪🇸 `es` - Español
+- 🇫🇷 `fr` - Français
+- 🇩🇪 `de` - Deutsch
+- 🇯🇵 `ja` - 日本語
+
 **Examples:**
 ```bash
 # Register feeds from different sources
@@ -62,7 +76,30 @@ go run ./cmd/bot
 
 # Set schedule for a feed (check at 9 AM, 1 PM, and 6 PM)
 /schedule-feed godot 09:00,13:00,18:00
+
+# Configure languages
+/set-language en                        # Set entire server to English
+/set-channel-language #brazilian pt-BR  # Portuguese for specific channel
+/set-channel-language #spanish es       # Spanish for specific channel
+/set-channel-language #german de        # German for specific channel
 ```
+
+**Multi-Language Setup:**
+```bash
+# International community with language-specific channels
+/set-language en                      # Server defaults to English
+/set-channel-language #português pt-BR
+/set-channel-language #español es
+/set-channel-language #français fr
+/set-channel-language #deutsch de
+/set-channel-language #日本語 ja
+```
+
+**How Language Detection Works:**
+1. Checks if channel has specific language override
+2. Falls back to guild/server default language
+3. Falls back to English (en) if nothing is set
+4. Smart grouping: generates one summary per language, shared across channels
 
 All commands (except `/list-feeds`) require **Manage Server** permission.
 
@@ -102,6 +139,10 @@ redis-cli LRANGE news:history:godot-official:pending 0 -1
 
 # Check all registered channels
 redis-cli KEYS "news:channels:*:feeds"
+
+# Language preferences
+redis-cli GET news:guilds:GUILD_ID:language       # Guild default language
+redis-cli GET news:channels:CHANNEL_ID:language   # Channel language override
 ```
 
 ## Docker Management
@@ -118,6 +159,9 @@ docker-compose down
 
 # Rebuild
 docker-compose up --build -d
+
+# Clear all data from Redis
+docker-compose exec redis redis-cli flushall
 ```
 
 ## Troubleshooting

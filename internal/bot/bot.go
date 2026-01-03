@@ -244,9 +244,9 @@ func (b *Bot) processPendingArticle(ctx context.Context, feed *storage.Feed, gui
 	return b.processAndPostArticle(ctx, feed, feedFetcher, article, channels)
 }
 
-// processAndPostArticle scrapes, summarizes, and posts an article
+// processAndPostArticle scrapes, summarizes, and posts an article with multilingual support
 func (b *Bot) processAndPostArticle(ctx context.Context, feed *storage.Feed, fetcher news.NewsFetcher, article *news.Article, channels []string) error {
-	log.Printf("Generating summary for %d channel(s) subscribed to feed %s...", len(channels), feed.ID)
+	log.Printf("Generating summaries for %d channel(s) subscribed to feed %s...", len(channels), feed.ID)
 
 	// Scrape article content
 	content, err := fetcher.ScrapeArticleContent(article.Link)
@@ -254,28 +254,99 @@ func (b *Bot) processAndPostArticle(ctx context.Context, feed *storage.Feed, fet
 		return fmt.Errorf("failed to scrape content: %w", err)
 	}
 
-	// Generate summary
-	summary, err := b.aiSummarizer.Summarize(ctx, content)
-	if err != nil {
-		return fmt.Errorf("failed to generate summary: %w", err)
-	}
+	// Group channels by language preference
+	channelsByLanguage := make(map[string][]string)
+	guildLanguageCache := make(map[string]string) // Cache guild languages to avoid redundant lookups
 
-	log.Printf("Summary generated for: %s", article.Title)
-
-	// Create embed message with feed info
-	embed := b.createNewsEmbed(feed, article, summary)
-
-	// Broadcast to all channels subscribed to this feed
-	successCount := 0
 	for _, channelID := range channels {
-		if err := b.sendEmbed(channelID, embed); err != nil {
-			log.Printf("Error sending to channel %s: %v", channelID, err)
-		} else {
-			successCount++
+		// Get channel language preference
+		channelLang, err := b.channelRepo.GetChannelLanguage(channelID)
+		if err != nil {
+			log.Printf("WARNING: Failed to get language for channel %s: %v, using default", channelID, err)
+			channelLang = "" // Will fall back to guild default
 		}
+
+		// If no channel-specific language, use guild default
+		if channelLang == "" {
+			// Get guild ID from channel
+			channel, err := b.session.Channel(channelID)
+			if err != nil {
+				log.Printf("WARNING: Failed to get channel info for %s: %v, using en", channelID, err)
+				channelLang = "en"
+			} else {
+				guildID := channel.GuildID
+				
+				// Check cache first
+				if cachedLang, ok := guildLanguageCache[guildID]; ok {
+					channelLang = cachedLang
+				} else {
+					// Fetch and cache guild language
+					guildLang, err := b.channelRepo.GetGuildLanguage(guildID)
+					if err != nil {
+						log.Printf("WARNING: Failed to get guild language for %s: %v, using en", guildID, err)
+						guildLang = "en"
+					}
+					if guildLang == "" {
+						guildLang = "en"
+					}
+					guildLanguageCache[guildID] = guildLang
+					channelLang = guildLang
+				}
+			}
+		}
+
+		log.Printf("Channel %s will receive summary in: %s", channelID, channelLang)
+		channelsByLanguage[channelLang] = append(channelsByLanguage[channelLang], channelID)
 	}
 
-	log.Printf("Article posted to %d/%d channels for feed %s", successCount, len(channels), feed.ID)
+	log.Printf("Grouped channels into %d language(s): %v", len(channelsByLanguage), getLanguageList(channelsByLanguage))
+
+	// Generate one summary per language
+	summariesByLanguage := make(map[string]string)
+	totalSuccessCount := 0
+
+	for lang, langChannels := range channelsByLanguage {
+		log.Printf("Generating summary in %s for %d channel(s)...", lang, len(langChannels))
+		
+		summary, err := b.aiSummarizer.SummarizeInLanguage(ctx, content, lang)
+		if err != nil {
+			log.Printf("ERROR: Failed to generate summary in %s: %v", lang, err)
+			// Try fallback to English if primary language fails
+			if lang != "en" {
+				log.Printf("Attempting fallback to English for %s channels", lang)
+				summary, err = b.aiSummarizer.SummarizeInLanguage(ctx, content, "en")
+				if err != nil {
+					log.Printf("ERROR: English fallback also failed: %v", err)
+					continue
+				}
+				log.Printf("Successfully generated English fallback summary")
+			} else {
+				continue
+			}
+		}
+
+		summariesByLanguage[lang] = summary
+		log.Printf("Summary generated in %s: %s", lang, article.Title)
+
+		// Create embed message with feed info
+		embed := b.createNewsEmbed(feed, article, summary)
+
+		// Broadcast to all channels using this language
+		successCount := 0
+		for _, channelID := range langChannels {
+			if err := b.sendEmbed(channelID, embed); err != nil {
+				log.Printf("Error sending to channel %s: %v", channelID, err)
+			} else {
+				successCount++
+			}
+		}
+
+		log.Printf("Article in %s posted to %d/%d channels", lang, successCount, len(langChannels))
+		totalSuccessCount += successCount
+	}
+
+	log.Printf("Article posted to %d/%d total channels across %d language(s) for feed %s", 
+		totalSuccessCount, len(channels), len(summariesByLanguage), feed.ID)
 
 	// Save GUID to history for this feed
 	if err := b.historyRepo.SaveGUID(feed.ID, article.GUID); err != nil {
@@ -285,15 +356,30 @@ func (b *Bot) processAndPostArticle(ctx context.Context, feed *storage.Feed, fet
 	return nil
 }
 
+// getLanguageList returns a list of language codes from the channelsByLanguage map
+func getLanguageList(channelsByLanguage map[string][]string) []string {
+	languages := make([]string, 0, len(channelsByLanguage))
+	for lang := range channelsByLanguage {
+		languages = append(languages, lang)
+	}
+	return languages
+}
+
 // createNewsEmbed creates a Discord embed for the news article with feed info
 func (b *Bot) createNewsEmbed(feed *storage.Feed, article *news.Article, summary string) *discordgo.MessageEmbed {
+	// Use feed description for footer, or just feed title if no description
+	footerText := feed.Title
+	if feed.Description != "" {
+		footerText = fmt.Sprintf("%s • %s", feed.Title, feed.Description)
+	}
+	
 	return &discordgo.MessageEmbed{
 		Title:       article.Title,
 		Description: summary,
 		URL:         article.Link,
-		Color:       0x478CBF, // Godot blue color
+		Color:       0x478CBF, // Blue color
 		Footer: &discordgo.MessageEmbedFooter{
-			Text: fmt.Sprintf("%s • %s", feed.Title, "Godot Engine News"),
+			Text: footerText,
 		},
 		Timestamp: article.PublishDate.Format(time.RFC3339),
 		Fields: []*discordgo.MessageEmbedField{

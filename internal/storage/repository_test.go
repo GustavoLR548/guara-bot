@@ -660,3 +660,222 @@ func TestRedisHistoryRepository_EmptyState(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "new-guid", lastGUID)
 }
+
+// TestRedisChannelRepository_GuildLanguage tests guild-level language settings
+func TestRedisChannelRepository_GuildLanguage(t *testing.T) {
+	tests := []struct {
+		name             string
+		guildID          string
+		languageToSet    string
+		expectError      bool
+		expectedLanguage string
+	}{
+		{
+			name:             "set guild language to Portuguese",
+			guildID:          "guild-123",
+			languageToSet:    "pt-BR",
+			expectError:      false,
+			expectedLanguage: "pt-BR",
+		},
+		{
+			name:             "set guild language to English",
+			guildID:          "guild-456",
+			languageToSet:    "en",
+			expectError:      false,
+			expectedLanguage: "en",
+		},
+		{
+			name:             "set guild language to Spanish",
+			guildID:          "guild-789",
+			languageToSet:    "es",
+			expectError:      false,
+			expectedLanguage: "es",
+		},
+		{
+			name:             "set guild language to Japanese",
+			guildID:          "guild-101",
+			languageToSet:    "ja",
+			expectError:      false,
+			expectedLanguage: "ja",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, client := setupTestRedis(t)
+			repo, err := NewRedisChannelRepository(client, 5)
+			require.NoError(t, err)
+
+			// Set the language
+			err = repo.SetGuildLanguage(tt.guildID, tt.languageToSet)
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			// Retrieve the language
+			retrievedLang, err := repo.GetGuildLanguage(tt.guildID)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedLanguage, retrievedLang)
+		})
+	}
+}
+
+// TestRedisChannelRepository_GetGuildLanguage_DefaultValue tests default language behavior
+func TestRedisChannelRepository_GetGuildLanguage_DefaultValue(t *testing.T) {
+	_, client := setupTestRedis(t)
+	repo, err := NewRedisChannelRepository(client, 5)
+	require.NoError(t, err)
+
+	// Get language for guild with no language set
+	language, err := repo.GetGuildLanguage("guild-no-lang")
+	require.NoError(t, err)
+	assert.Equal(t, "en", language, "Should default to English when no language is set")
+}
+
+// TestRedisChannelRepository_ChannelLanguage tests channel-level language overrides
+func TestRedisChannelRepository_ChannelLanguage(t *testing.T) {
+	tests := []struct {
+		name             string
+		channelID        string
+		languageToSet    string
+		expectError      bool
+		expectedLanguage string
+	}{
+		{
+			name:             "set channel language to French",
+			channelID:        "channel-123",
+			languageToSet:    "fr",
+			expectError:      false,
+			expectedLanguage: "fr",
+		},
+		{
+			name:             "set channel language to German",
+			channelID:        "channel-456",
+			languageToSet:    "de",
+			expectError:      false,
+			expectedLanguage: "de",
+		},
+		{
+			name:             "set channel language to Portuguese",
+			channelID:        "channel-789",
+			languageToSet:    "pt-BR",
+			expectError:      false,
+			expectedLanguage: "pt-BR",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, client := setupTestRedis(t)
+			repo, err := NewRedisChannelRepository(client, 5)
+			require.NoError(t, err)
+
+			// Set the language
+			err = repo.SetChannelLanguage(tt.channelID, tt.languageToSet)
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			// Retrieve the language
+			retrievedLang, err := repo.GetChannelLanguage(tt.channelID)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedLanguage, retrievedLang)
+		})
+	}
+}
+
+// TestRedisChannelRepository_GetChannelLanguage_EmptyValue tests channel with no override
+func TestRedisChannelRepository_GetChannelLanguage_EmptyValue(t *testing.T) {
+	_, client := setupTestRedis(t)
+	repo, err := NewRedisChannelRepository(client, 5)
+	require.NoError(t, err)
+
+	// Get language for channel with no override set
+	language, err := repo.GetChannelLanguage("channel-no-override")
+	require.NoError(t, err)
+	assert.Equal(t, "", language, "Should return empty string when no channel override is set")
+}
+
+// TestRedisChannelRepository_LanguageUpdate tests updating existing language
+func TestRedisChannelRepository_LanguageUpdate(t *testing.T) {
+	_, client := setupTestRedis(t)
+	repo, err := NewRedisChannelRepository(client, 5)
+	require.NoError(t, err)
+
+	guildID := "guild-update-test"
+
+	// Set initial language
+	err = repo.SetGuildLanguage(guildID, "en")
+	require.NoError(t, err)
+
+	// Verify initial language
+	lang, err := repo.GetGuildLanguage(guildID)
+	require.NoError(t, err)
+	assert.Equal(t, "en", lang)
+
+	// Update to different language
+	err = repo.SetGuildLanguage(guildID, "ja")
+	require.NoError(t, err)
+
+	// Verify updated language
+	lang, err = repo.GetGuildLanguage(guildID)
+	require.NoError(t, err)
+	assert.Equal(t, "ja", lang)
+}
+
+// TestRedisChannelRepository_LanguageHierarchy tests the full language detection hierarchy
+func TestRedisChannelRepository_LanguageHierarchy(t *testing.T) {
+	_, client := setupTestRedis(t)
+	repo, err := NewRedisChannelRepository(client, 5)
+	require.NoError(t, err)
+
+	guildID := "guild-hierarchy"
+	channelID := "channel-hierarchy"
+
+	// Scenario 1: No settings - should use default (en)
+	guildLang, err := repo.GetGuildLanguage(guildID)
+	require.NoError(t, err)
+	assert.Equal(t, "en", guildLang, "Guild with no language should default to en")
+
+	channelLang, err := repo.GetChannelLanguage(channelID)
+	require.NoError(t, err)
+	assert.Equal(t, "", channelLang, "Channel with no override should return empty")
+
+	// Scenario 2: Set guild language
+	err = repo.SetGuildLanguage(guildID, "pt-BR")
+	require.NoError(t, err)
+
+	guildLang, err = repo.GetGuildLanguage(guildID)
+	require.NoError(t, err)
+	assert.Equal(t, "pt-BR", guildLang, "Guild language should be pt-BR")
+
+	// Channel still has no override
+	channelLang, err = repo.GetChannelLanguage(channelID)
+	require.NoError(t, err)
+	assert.Equal(t, "", channelLang, "Channel should still have no override")
+
+	// Scenario 3: Set channel override
+	err = repo.SetChannelLanguage(channelID, "es")
+	require.NoError(t, err)
+
+	channelLang, err = repo.GetChannelLanguage(channelID)
+	require.NoError(t, err)
+	assert.Equal(t, "es", channelLang, "Channel override should be es")
+
+	// Guild language unchanged
+	guildLang, err = repo.GetGuildLanguage(guildID)
+	require.NoError(t, err)
+	assert.Equal(t, "pt-BR", guildLang, "Guild language should still be pt-BR")
+
+	// Scenario 4: Clear channel override (set to empty)
+	err = repo.SetChannelLanguage(channelID, "")
+	require.NoError(t, err)
+
+	channelLang, err = repo.GetChannelLanguage(channelID)
+	require.NoError(t, err)
+	assert.Equal(t, "", channelLang, "Channel override should be cleared")
+}
