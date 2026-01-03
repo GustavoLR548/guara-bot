@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/GustavoLR548/godot-news-bot/internal/storage"
@@ -12,6 +13,7 @@ import (
 
 // MockChannelRepository is a mock for testing
 type MockChannelRepository struct {
+	mu           sync.RWMutex
 	channelFeeds map[string]map[string]bool // channelID -> set of feedIDs
 	maxLimit     int
 	addError     error
@@ -26,6 +28,9 @@ func NewMockChannelRepository(maxLimit int) *MockChannelRepository {
 }
 
 func (m *MockChannelRepository) AddChannel(channelID, feedID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
 	if m.addError != nil {
 		return m.addError
 	}
@@ -43,6 +48,9 @@ func (m *MockChannelRepository) AddChannel(channelID, feedID string) error {
 }
 
 func (m *MockChannelRepository) RemoveChannel(channelID, feedID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
 	if m.channelFeeds[channelID] != nil {
 		delete(m.channelFeeds[channelID], feedID)
 		if len(m.channelFeeds[channelID]) == 0 {
@@ -53,6 +61,9 @@ func (m *MockChannelRepository) RemoveChannel(channelID, feedID string) error {
 }
 
 func (m *MockChannelRepository) GetAllChannels() ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
 	if m.getError != nil {
 		return nil, m.getError
 	}
@@ -64,6 +75,9 @@ func (m *MockChannelRepository) GetAllChannels() ([]string, error) {
 }
 
 func (m *MockChannelRepository) GetChannelCount() (int, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
 	if m.getError != nil {
 		return 0, m.getError
 	}
@@ -71,6 +85,9 @@ func (m *MockChannelRepository) GetChannelCount() (int, error) {
 }
 
 func (m *MockChannelRepository) HasChannel(channelID string) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
 	if m.getError != nil {
 		return false, m.getError
 	}
@@ -78,6 +95,9 @@ func (m *MockChannelRepository) HasChannel(channelID string) (bool, error) {
 }
 
 func (m *MockChannelRepository) GetChannelFeeds(channelID string) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
 	if m.getError != nil {
 		return nil, m.getError
 	}
@@ -91,6 +111,9 @@ func (m *MockChannelRepository) GetChannelFeeds(channelID string) ([]string, err
 }
 
 func (m *MockChannelRepository) GetFeedChannels(feedID string) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
 	if m.getError != nil {
 		return nil, m.getError
 	}
