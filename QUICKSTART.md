@@ -54,6 +54,11 @@ go run ./cmd/bot
 /set-channel-language #channel [language] # Override language for specific channel
 ```
 
+### Help & Information
+```bash
+/help  # Display all available commands organized by category
+```
+
 **Supported Languages:**
 - 🇧🇷 `pt-BR` - Português (Brasil)
 - 🇺🇸 `en` - English

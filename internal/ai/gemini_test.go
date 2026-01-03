@@ -13,74 +13,91 @@ import (
 
 // MockAISummarizer is a mock implementation of AISummarizer for testing
 type MockAISummarizer struct {
-	SummarizeFunc          func(ctx context.Context, text string) (string, error)
-	SummarizeInLanguageFunc func(ctx context.Context, text string, languageCode string) (string, error)
+	SummarizeFunc          func(ctx context.Context, text string, originalTitle string) (*SummaryResponse, error)
+	SummarizeInLanguageFunc func(ctx context.Context, text string, originalTitle string, languageCode string) (*SummaryResponse, error)
 }
 
-func (m *MockAISummarizer) Summarize(ctx context.Context, text string) (string, error) {
+func (m *MockAISummarizer) Summarize(ctx context.Context, text string, originalTitle string) (*SummaryResponse, error) {
 	if m.SummarizeFunc != nil {
-		return m.SummarizeFunc(ctx, text)
+		return m.SummarizeFunc(ctx, text, originalTitle)
 	}
-	return "", fmt.Errorf("not implemented")
+	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *MockAISummarizer) SummarizeInLanguage(ctx context.Context, text string, languageCode string) (string, error) {
+func (m *MockAISummarizer) SummarizeInLanguage(ctx context.Context, text string, originalTitle string, languageCode string) (*SummaryResponse, error) {
 	if m.SummarizeInLanguageFunc != nil {
-		return m.SummarizeInLanguageFunc(ctx, text, languageCode)
+		return m.SummarizeInLanguageFunc(ctx, text, originalTitle, languageCode)
 	}
-	return "", fmt.Errorf("not implemented")
+	return nil, fmt.Errorf("not implemented")
 }
 
 // TestMockAISummarizer_Summarize tests the mock implementation
 func TestMockAISummarizer_Summarize(t *testing.T) {
 	tests := []struct {
-		name          string
-		inputText     string
-		mockResponse  string
-		mockError     error
-		expectError   bool
-		expectedText  string
+		name               string
+		inputText          string
+		inputTitle         string
+		mockResponse       *SummaryResponse
+		mockError          error
+		expectError        bool
+		expectedTitle      string
+		expectedSummary    string
 	}{
 		{
-			name:         "successful summarization",
-			inputText:    "Long article text here",
-			mockResponse: "TL;DR: Resumo em PT-BR",
-			mockError:    nil,
-			expectError:  false,
-			expectedText: "TL;DR: Resumo em PT-BR",
+			name:       "successful summarization",
+			inputText:  "Long article text here",
+			inputTitle: "Godot 4.3 Released",
+			mockResponse: &SummaryResponse{
+				TranslatedTitle: "Godot 4.3 Released",
+				Summary:         "TL;DR: Summary in English",
+			},
+			mockError:       nil,
+			expectError:     false,
+			expectedTitle:   "Godot 4.3 Released",
+			expectedSummary: "TL;DR: Summary in English",
 		},
 		{
 			name:        "error during summarization",
 			inputText:   "Some text",
+			inputTitle:  "Test Title",
 			mockError:   fmt.Errorf("API error"),
 			expectError: true,
 		},
 		{
-			name:         "empty summary response",
-			inputText:    "Text to summarize",
-			mockResponse: "",
-			expectError:  false,
-			expectedText: "",
+			name:       "empty summary response",
+			inputText:  "Text to summarize",
+			inputTitle: "Another Title",
+			mockResponse: &SummaryResponse{
+				TranslatedTitle: "Another Title",
+				Summary:         "",
+			},
+			expectError:     false,
+			expectedTitle:   "Another Title",
+			expectedSummary: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &MockAISummarizer{
-				SummarizeFunc: func(ctx context.Context, text string) (string, error) {
+				SummarizeFunc: func(ctx context.Context, text string, originalTitle string) (*SummaryResponse, error) {
 					assert.Equal(t, tt.inputText, text)
+					assert.Equal(t, tt.inputTitle, originalTitle)
 					return tt.mockResponse, tt.mockError
 				},
 			}
 
 			ctx := context.Background()
-			result, err := mock.Summarize(ctx, tt.inputText)
+			result, err := mock.Summarize(ctx, tt.inputText, tt.inputTitle)
 
 			if tt.expectError {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedText, result)
+				if result != nil {
+					assert.Equal(t, tt.expectedTitle, result.TranslatedTitle)
+					assert.Equal(t, tt.expectedSummary, result.Summary)
+				}
 			}
 		})
 	}
@@ -92,7 +109,7 @@ func TestGeminiSummarizer_Summarize_EmptyInput(t *testing.T) {
 	summarizer := NewGeminiSummarizer("fake-api-key")
 
 	ctx := context.Background()
-	_, err := summarizer.Summarize(ctx, "")
+	_, err := summarizer.Summarize(ctx, "", "Test Title")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty text")
@@ -138,7 +155,7 @@ func TestGeminiSummarizer_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	_, err := summarizer.Summarize(ctx, "Some text to summarize")
+	_, err := summarizer.Summarize(ctx, "Some text to summarize", "Test Title")
 
 	// Should fail because context is cancelled
 	require.Error(t, err)
@@ -159,8 +176,11 @@ func TestAISummarizerInterface_Compliance(t *testing.T) {
 		{
 			name: "MockAISummarizer complies",
 			summarizer: &MockAISummarizer{
-				SummarizeFunc: func(ctx context.Context, text string) (string, error) {
-					return "mock summary", nil
+				SummarizeFunc: func(ctx context.Context, text string, originalTitle string) (*SummaryResponse, error) {
+					return &SummaryResponse{
+						TranslatedTitle: originalTitle,
+						Summary:         "mock summary",
+					}, nil
 				},
 			},
 			description: "MockAISummarizer should implement AISummarizer",
@@ -182,60 +202,72 @@ func TestMockAISummarizer_TableDriven(t *testing.T) {
 		name           string
 		setupMock      func() *MockAISummarizer
 		inputText      string
+		inputTitle     string
 		expectError    bool
-		validateResult func(*testing.T, string)
+		validateResult func(*testing.T, *SummaryResponse)
 	}{
 		{
-			name: "returns Portuguese summary",
+			name: "returns English summary",
 			setupMock: func() *MockAISummarizer {
 				return &MockAISummarizer{
-					SummarizeFunc: func(ctx context.Context, text string) (string, error) {
-						return "TL;DR: Este é um resumo em português", nil
+					SummarizeFunc: func(ctx context.Context, text string, originalTitle string) (*SummaryResponse, error) {
+						return &SummaryResponse{
+							TranslatedTitle: originalTitle,
+							Summary:         "TL;DR: This is a summary in English",
+						}, nil
 					},
 				}
 			},
 			inputText:   "Article in English",
+			inputTitle:  "Test Article",
 			expectError: false,
-			validateResult: func(t *testing.T, result string) {
-				assert.Contains(t, result, "TL;DR")
-				assert.Contains(t, result, "português")
+			validateResult: func(t *testing.T, result *SummaryResponse) {
+				assert.Contains(t, result.Summary, "TL;DR")
+				assert.Contains(t, result.Summary, "English")
+				assert.Equal(t, "Test Article", result.TranslatedTitle)
 			},
 		},
 		{
 			name: "handles long text",
 			setupMock: func() *MockAISummarizer {
 				return &MockAISummarizer{
-					SummarizeFunc: func(ctx context.Context, text string) (string, error) {
+					SummarizeFunc: func(ctx context.Context, text string, originalTitle string) (*SummaryResponse, error) {
 						assert.Greater(t, len(text), 100)
-						return "Resumo curto", nil
+						return &SummaryResponse{
+							TranslatedTitle: originalTitle,
+							Summary:         "Short summary",
+						}, nil
 					},
 				}
 			},
 			inputText:   string(make([]byte, 500)), // Long text
+			inputTitle:  "Long Article",
 			expectError: false,
 		},
 		{
 			name: "simulates API rate limit error",
 			setupMock: func() *MockAISummarizer {
 				return &MockAISummarizer{
-					SummarizeFunc: func(ctx context.Context, text string) (string, error) {
-						return "", fmt.Errorf("API rate limit exceeded")
+					SummarizeFunc: func(ctx context.Context, text string, originalTitle string) (*SummaryResponse, error) {
+						return nil, fmt.Errorf("API rate limit exceeded")
 					},
 				}
 			},
 			inputText:   "Some text",
+			inputTitle:  "Rate Limited",
 			expectError: true,
 		},
 		{
 			name: "simulates network timeout",
-			setupMock: func() *MockAISummarizer {
+			setupMock: func() *MockAISummarizer{
 				return &MockAISummarizer{
-					SummarizeFunc: func(ctx context.Context, text string) (string, error) {
-						return "", fmt.Errorf("context deadline exceeded")
+					SummarizeFunc: func(ctx context.Context, text string, originalTitle string) (*SummaryResponse, error) {
+						return nil, fmt.Errorf("context deadline exceeded")
 					},
 				}
 			},
 			inputText:   "Article content",
+			inputTitle:  "Timeout Test",
 			expectError: true,
 		},
 	}
@@ -245,7 +277,7 @@ func TestMockAISummarizer_TableDriven(t *testing.T) {
 			mock := tt.setupMock()
 			ctx := context.Background()
 
-			result, err := mock.Summarize(ctx, tt.inputText)
+			result, err := mock.Summarize(ctx, tt.inputText, tt.inputTitle)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -263,21 +295,26 @@ func TestMockAISummarizer_TableDriven(t *testing.T) {
 func ExampleMockAISummarizer() {
 	// Create a mock that returns a predefined summary
 	mock := &MockAISummarizer{
-		SummarizeFunc: func(ctx context.Context, text string) (string, error) {
-			return "TL;DR: Godot 4.3 foi lançado com novas funcionalidades!", nil
+		SummarizeFunc: func(ctx context.Context, text string, originalTitle string) (*SummaryResponse, error) {
+			return &SummaryResponse{
+				TranslatedTitle: "Godot 4.3 Released",
+				Summary:         "TL;DR: Godot 4.3 was released with new features!",
+			}, nil
 		},
 	}
 
 	ctx := context.Background()
-	summary, err := mock.Summarize(ctx, "Long article about Godot 4.3 release...")
+	response, err := mock.Summarize(ctx, "Long article about Godot 4.3 release...", "Godot 4.3 Release")
 	
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
 
-	fmt.Println(summary)
-	// Output: TL;DR: Godot 4.3 foi lançado com novas funcionalidades!
+	fmt.Println(response.TranslatedTitle)
+	fmt.Println(response.Summary)
+	// Output: Godot 4.3 Released
+	// TL;DR: Godot 4.3 was released with new features!
 }
 
 // TestGeminiSummarizer_RateLimiting tests rate limiting integration

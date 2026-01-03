@@ -45,10 +45,13 @@ graph TB
 **AI Summarization** (`internal/ai/`)
 - Google Gemini 2.5 Flash
 - Multilingual generation in 6 languages (pt-BR, en, es, fr, de, ja)
+- JSON response format with translated titles and summaries
 - Language-specific prompts with tone instructions
+- Single API call for title translation (cost-efficient)
 - 1500 max tokens, 5-minute timeout
 - Enhanced logging (input length, API timing, finish reason)
 - Smart grouping: one summary per language, shared across channels
+- Title validation and truncation (max 256 chars for Discord)
 
 **RSS Processor** (`internal/news/`)
 - gofeed v1.3.0 for parsing
@@ -101,6 +104,7 @@ go test -cover ./... # With coverage
 | `/schedule-feed <id> <times>` | Set check times (e.g., 09:00,13:00,18:00) | Manage Server |
 | `/set-language <language>` | Set default language for server (pt-BR/en/es/fr/de/ja) | Manage Server |
 | `/set-channel-language #channel [lang]` | Override language for specific channel | Manage Server |
+| `/help` | Display all available commands with descriptions | Anyone |
 
 ## Configuration
 
@@ -177,8 +181,11 @@ docker-compose up --build
 ### Core Functionality
 - ✅ Channel-based subscription with # parameters
 - ✅ AI-powered summaries in 6 languages (pt-BR, en, es, fr, de, ja)
+- ✅ Translated article titles alongside summaries
+- ✅ JSON-based AI responses for reliable parsing
 - ✅ Multilingual support with smart channel grouping
 - ✅ Language preferences at guild and channel levels
+- ✅ Displays both original and translated titles (when different)
 - ✅ Pending queue (max 5 articles when no channels)
 - ✅ Validation (update-news requires ≥1 channel)
 - ✅ Docker deployment with Redis persistence

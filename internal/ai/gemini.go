@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -12,12 +13,18 @@ import (
 	"google.golang.org/api/option"
 )
 
+// SummaryResponse contains both translated title and summary
+type SummaryResponse struct {
+	TranslatedTitle string `json:"translated_title"`
+	Summary         string `json:"summary"`
+}
+
 // AISummarizer defines the interface for AI-based text summarization
 type AISummarizer interface {
 	// Summarize generates a TL;DR summary in Brazilian Portuguese
-	Summarize(ctx context.Context, text string) (string, error)
-	// SummarizeInLanguage generates a TL;DR summary in the specified language
-	SummarizeInLanguage(ctx context.Context, text string, languageCode string) (string, error)
+	Summarize(ctx context.Context, text string, originalTitle string) (*SummaryResponse, error)
+	// SummarizeInLanguage generates a TL;DR summary with translated title in the specified language
+	SummarizeInLanguage(ctx context.Context, text string, originalTitle string, languageCode string) (*SummaryResponse, error)
 }
 
 // GeminiSummarizer implements AISummarizer using Google's Gemini API
@@ -69,9 +76,9 @@ func (s *GeminiSummarizer) ListAvailableModels(ctx context.Context) ([]string, e
 }
 
 // Summarize generates a TL;DR summary in English (default language) with rate limiting
-func (s *GeminiSummarizer) Summarize(ctx context.Context, text string) (string, error) {
+func (s *GeminiSummarizer) Summarize(ctx context.Context, text string, originalTitle string) (*SummaryResponse, error) {
 	// Default to English for backward compatibility
-	return s.SummarizeInLanguage(ctx, text, "en")
+	return s.SummarizeInLanguage(ctx, text, originalTitle, "en")
 }
 
 // SummarizeDeprecated is the old implementation (kept for reference)
@@ -294,10 +301,10 @@ func GetLanguageName(code string) string {
 	return getLanguageInfo(code).NativeName
 }
 
-// SummarizeInLanguage generates a TL;DR summary in the specified language with rate limiting
-func (s *GeminiSummarizer) SummarizeInLanguage(ctx context.Context, text string, languageCode string) (string, error) {
+// SummarizeInLanguage generates a TL;DR summary with translated title in the specified language with rate limiting
+func (s *GeminiSummarizer) SummarizeInLanguage(ctx context.Context, text string, originalTitle string, languageCode string) (*SummaryResponse, error) {
 	if text == "" {
-		return "", fmt.Errorf("empty text provided")
+		return nil, fmt.Errorf("empty text provided")
 	}
 
 	log.Printf("Starting summary generation in language %s (input length: %d chars)", languageCode, len(text))
@@ -308,29 +315,36 @@ func (s *GeminiSummarizer) SummarizeInLanguage(ctx context.Context, text string,
 	// Create client
 	client, err := genai.NewClient(ctx, option.WithAPIKey(s.apiKey))
 	if err != nil {
-		return "", fmt.Errorf("failed to create Gemini client: %w", err)
+		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
 	}
 	defer client.Close()
 
 	model := client.GenerativeModel(s.model)
 
-	// Build language-specific prompt
-	fullPrompt := fmt.Sprintf(`Crie um resumo informativo em %s para desenvolvedores sobre o seguinte artigo. 
-O resumo deve ter 3-5 frases, destacando as principais novidades, melhorias ou mudanças importantes. 
-Seja claro, técnico e objetivo.
-
-IMPORTANTE: 
-- Responda APENAS em %s
-- NÃO inclua nenhum preâmbulo, introdução ou frase como "Aqui está um resumo"
-- Comece DIRETAMENTE com o conteúdo do resumo
+	// Build language-specific prompt with JSON response format
+	fullPrompt := fmt.Sprintf(`You are a technical news summarizer. Analyze the following article and provide:
+1. A translated title in %s (keep it concise, under 100 characters)
+2. A 3-5 sentence technical summary in %s highlighting key updates, improvements, or changes
 
 %s
 
-Artigo:
+IMPORTANT:
+- Respond ONLY with valid JSON
+- Use this exact format: {"translated_title": "...", "summary": "..."}
+- Do NOT include any preamble, explanation, markdown formatting, or code blocks
+- Start directly with the JSON object
+- The summary should be clear, technical, and professional
+- If the title is already in %s, you can keep it similar but ensure it's natural
+
+Original Title: %s
+
+Article Content:
 %s`,
 		langInfo.Name,
 		langInfo.Name,
 		langInfo.Instructions,
+		langInfo.Name,
+		originalTitle,
 		text,
 	)
 
@@ -357,13 +371,13 @@ Artigo:
 		// Try waiting for capacity
 		waitErr := s.rateLimiter.WaitForCapacity(ctx, estimatedTotal)
 		if waitErr != nil {
-			return "", fmt.Errorf("rate limit exceeded and wait failed: %w", err)
+			return nil, fmt.Errorf("rate limit exceeded and wait failed: %w", err)
 		}
 		log.Printf("Rate limit capacity available after waiting for %s", languageCode)
 	}
 
 	// Retry logic with exponential backoff
-	var summary string
+	var rawResponse string
 	var lastErr error
 	maxRetries := s.rateLimiter.GetConfig().RetryAttempts
 
@@ -376,18 +390,30 @@ Artigo:
 			case <-time.After(backoff):
 				// Continue with retry
 			case <-ctx.Done():
-				return "", ctx.Err()
+				return nil, ctx.Err()
 			}
 		}
 
-		summary, lastErr = s.attemptSummarize(ctx, model, fullPrompt)
+		rawResponse, lastErr = s.attemptSummarize(ctx, model, fullPrompt)
 		
 		if lastErr == nil {
-			// Success - record request with actual token usage
-			actualTokens := inputTokens + (len(summary) / 4)
+			// Success - parse JSON response
+			response, parseErr := s.parseJSONResponse(rawResponse, originalTitle, languageCode)
+			if parseErr != nil {
+				log.Printf("WARNING: JSON parse error for %s: %v", languageCode, parseErr)
+				// Fallback: treat entire response as summary, keep original title
+				response = &SummaryResponse{
+					TranslatedTitle: originalTitle,
+					Summary:         rawResponse,
+				}
+			}
+			
+			// Record request with actual token usage
+			actualTokens := inputTokens + (len(rawResponse) / 4)
 			s.rateLimiter.RecordRequest(actualTokens)
 			log.Printf("Request successful for %s, recorded %d tokens", languageCode, actualTokens)
-			return summary, nil
+			log.Printf("Translated title (%s): %s", languageCode, response.TranslatedTitle)
+			return response, nil
 		}
 
 		// Record failure for circuit breaker
@@ -397,11 +423,57 @@ Artigo:
 		// Check if we should retry
 		if !s.shouldRetry(lastErr) {
 			log.Printf("Error is not retryable for %s, aborting", languageCode)
-			return "", lastErr
+			return nil, lastErr
 		}
 	}
 
-	return "", fmt.Errorf("failed after %d attempts for %s: %w", maxRetries+1, languageCode, lastErr)
+	return nil, fmt.Errorf("failed after %d attempts for %s: %w", maxRetries+1, languageCode, lastErr)
+}
+
+// parseJSONResponse parses the JSON response from Gemini and validates it
+func (s *GeminiSummarizer) parseJSONResponse(rawResponse string, originalTitle string, languageCode string) (*SummaryResponse, error) {
+	// Clean up response - remove markdown code blocks if present
+	cleanedResponse := strings.TrimSpace(rawResponse)
+	cleanedResponse = strings.TrimPrefix(cleanedResponse, "```json")
+	cleanedResponse = strings.TrimPrefix(cleanedResponse, "```")
+	cleanedResponse = strings.TrimSuffix(cleanedResponse, "```")
+	cleanedResponse = strings.TrimSpace(cleanedResponse)
+	
+	log.Printf("Parsing JSON response for %s (length: %d)", languageCode, len(cleanedResponse))
+	
+	var response SummaryResponse
+	if err := json.Unmarshal([]byte(cleanedResponse), &response); err != nil {
+		log.Printf("ERROR: Failed to parse JSON for %s: %v", languageCode, err)
+		log.Printf("Raw response (first 200 chars): %s", truncateString(cleanedResponse, 200))
+		return nil, fmt.Errorf("JSON parse error: %w", err)
+	}
+	
+	// Validate response
+	if response.TranslatedTitle == "" {
+		log.Printf("WARNING: Empty translated title for %s, using original", languageCode)
+		response.TranslatedTitle = originalTitle
+	}
+	
+	if response.Summary == "" {
+		log.Printf("ERROR: Empty summary for %s", languageCode)
+		return nil, fmt.Errorf("empty summary in response")
+	}
+	
+	// Truncate title if too long (max 256 chars for Discord embed)
+	if len(response.TranslatedTitle) > 256 {
+		log.Printf("WARNING: Title too long for %s (%d chars), truncating", languageCode, len(response.TranslatedTitle))
+		response.TranslatedTitle = response.TranslatedTitle[:253] + "..."
+	}
+	
+	return &response, nil
+}
+
+// truncateString truncates a string to maxLength characters
+func truncateString(s string, maxLength int) string {
+	if len(s) <= maxLength {
+		return s
+	}
+	return s[:maxLength] + "..."
 }
 
 // shouldRetry determines if an error is retryable

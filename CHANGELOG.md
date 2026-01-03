@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Automatic fallback to English if primary language generation fails
   - Language-specific prompts with culturally appropriate instructions
   - Flag emojis in command choices for better UX
+- **Translated Article Titles**: Titles are now translated alongside summaries
+  - JSON response format from AI: `{"translated_title": "...", "summary": "..."}`
+  - Shows both original and translated titles in Discord embed (if different)
+  - Single API call for cost-efficiency (title + summary in one request)
+  - Robust JSON parsing with fallback to original title on errors
+  - Title validation and truncation (max 256 chars for Discord)
+  - "Original Title" label translated in all 6 supported languages
+- **Help Command**: New `/help` command displaying all 12 available commands
+  - Organized by category: Feed Management, Channel Setup, Manual Updates, Language Settings, Information
+  - Shows admin permission requirements
+  - Lists all supported languages with flag emojis
+- **Localized Link Text**: "Read full article" link translated in all 6 languages
 
 ### Changed
 - **Article Processing**: Refactored to support multilingual distribution
@@ -31,13 +43,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Backward compatible: `Summarize()` defaults to English
   - Language-specific prompts with tone and style instructions
   - Helper functions: `GetSupportedLanguages()`, `GetLanguageName()`
+  - New `SummaryResponse` struct replaces plain string returns
+  - Accepts `originalTitle` parameter for translation
+  - Enhanced error handling with JSON parse fallbacks
 - **Default Language**: Changed from Portuguese (pt-BR) to English (en) for broader international appeal
+- **Command Feedback**: All command responses now in English for consistency
+- **Discord Embeds**: Enhanced to show both original and translated titles when different
 
 ### Technical Details
 - **No Breaking Changes**: Existing deployments default to English (more international)
 - **Performance**: Smart grouping reduces API calls (1 per language vs 1 per channel)
 - **Architecture**: LanguageInfo struct with Code, Name, NativeName, Instructions
-- **Commands**: 11 total commands (added 2 language management commands)
+- **Commands**: 12 total commands (added 2 language management + 1 help command)
+- **Testing**: 67+ tests passing with race detector enabled
+- **Thread Safety**: All mock repositories use proper mutex locking
 
 ## [1.3.0] - TBD
 

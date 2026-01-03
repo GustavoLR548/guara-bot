@@ -302,19 +302,19 @@ func (b *Bot) processAndPostArticle(ctx context.Context, feed *storage.Feed, fet
 	log.Printf("Grouped channels into %d language(s): %v", len(channelsByLanguage), getLanguageList(channelsByLanguage))
 
 	// Generate one summary per language
-	summariesByLanguage := make(map[string]string)
+	summariesByLanguage := make(map[string]*ai.SummaryResponse)
 	totalSuccessCount := 0
 
 	for lang, langChannels := range channelsByLanguage {
 		log.Printf("Generating summary in %s for %d channel(s)...", lang, len(langChannels))
 		
-		summary, err := b.aiSummarizer.SummarizeInLanguage(ctx, content, lang)
+		response, err := b.aiSummarizer.SummarizeInLanguage(ctx, content, article.Title, lang)
 		if err != nil {
 			log.Printf("ERROR: Failed to generate summary in %s: %v", lang, err)
 			// Try fallback to English if primary language fails
 			if lang != "en" {
 				log.Printf("Attempting fallback to English for %s channels", lang)
-				summary, err = b.aiSummarizer.SummarizeInLanguage(ctx, content, "en")
+				response, err = b.aiSummarizer.SummarizeInLanguage(ctx, content, article.Title, "en")
 				if err != nil {
 					log.Printf("ERROR: English fallback also failed: %v", err)
 					continue
@@ -325,11 +325,11 @@ func (b *Bot) processAndPostArticle(ctx context.Context, feed *storage.Feed, fet
 			}
 		}
 
-		summariesByLanguage[lang] = summary
-		log.Printf("Summary generated in %s: %s", lang, article.Title)
+		summariesByLanguage[lang] = response
+		log.Printf("Summary generated in %s: %s", lang, response.TranslatedTitle)
 
 		// Create embed message with feed info (language-specific)
-		embed := b.createNewsEmbed(feed, article, summary, lang)
+		embed := b.createNewsEmbed(feed, article, response, lang)
 
 		// Broadcast to all channels using this language
 		successCount := 0
@@ -366,7 +366,7 @@ func getLanguageList(channelsByLanguage map[string][]string) []string {
 }
 
 // createNewsEmbed creates a Discord embed for the news article with feed info
-func (b *Bot) createNewsEmbed(feed *storage.Feed, article *news.Article, summary string, language string) *discordgo.MessageEmbed {
+func (b *Bot) createNewsEmbed(feed *storage.Feed, article *news.Article, response *ai.SummaryResponse, language string) *discordgo.MessageEmbed {
 	// Translations for "Read full article" link
 	readFullArticle := map[string]string{
 		"pt-BR": "Ler artigo completo",
@@ -377,10 +377,25 @@ func (b *Bot) createNewsEmbed(feed *storage.Feed, article *news.Article, summary
 		"ja":    "記事全文を読む",
 	}
 	
+	// Translations for "Original title" label
+	originalTitleLabel := map[string]string{
+		"pt-BR": "📰 Título Original",
+		"en":    "📰 Original Title",
+		"es":    "📰 Título Original",
+		"fr":    "📰 Titre Original",
+		"de":    "📰 Originaltitel",
+		"ja":    "📰 元のタイトル",
+	}
+	
 	// Get translation or fallback to English
 	linkText, ok := readFullArticle[language]
 	if !ok {
 		linkText = readFullArticle["en"]
+	}
+	
+	originalLabel, ok := originalTitleLabel[language]
+	if !ok {
+		originalLabel = originalTitleLabel["en"]
 	}
 	
 	// Use feed description for footer, or just feed title if no description
@@ -389,22 +404,35 @@ func (b *Bot) createNewsEmbed(feed *storage.Feed, article *news.Article, summary
 		footerText = fmt.Sprintf("%s • %s", feed.Title, feed.Description)
 	}
 	
+	// Build embed fields
+	fields := []*discordgo.MessageEmbedField{}
+	
+	// Only show original title if it's different from translated title
+	if response.TranslatedTitle != article.Title {
+		fields = append(fields, &discordgo.MessageEmbedField{
+			Name:   originalLabel,
+			Value:  article.Title,
+			Inline: false,
+		})
+	}
+	
+	// Add article link
+	fields = append(fields, &discordgo.MessageEmbedField{
+		Name:   "🔗",
+		Value:  fmt.Sprintf("[%s](%s)", linkText, article.Link),
+		Inline: false,
+	})
+	
 	return &discordgo.MessageEmbed{
-		Title:       article.Title,
-		Description: summary,
+		Title:       response.TranslatedTitle,
+		Description: response.Summary,
 		URL:         article.Link,
 		Color:       0x478CBF, // Blue color
 		Footer: &discordgo.MessageEmbedFooter{
 			Text: footerText,
 		},
 		Timestamp: article.PublishDate.Format(time.RFC3339),
-		Fields: []*discordgo.MessageEmbedField{
-			{
-				Name:   "🔗",
-				Value:  fmt.Sprintf("[%s](%s)", linkText, article.Link),
-				Inline: false,
-			},
-		},
+		Fields:    fields,
 	}
 }
 
