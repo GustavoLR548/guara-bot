@@ -1,6 +1,6 @@
 # Guara Bot
 
-A versatile Discord bot that monitors multiple RSS feeds and posts AI-generated summaries in Brazilian Portuguese. Perfect for keeping your community updated with news from blogs, game engines, tech sites, and any RSS-enabled source.
+A versatile Discord bot that monitors multiple RSS feeds and posts AI-generated summaries. Perfect for keeping your community updated with news from blogs, game engines, tech sites, and any RSS-enabled source.
 
 ## Features
 
