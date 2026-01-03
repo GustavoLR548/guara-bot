@@ -209,6 +209,10 @@ func (h *CommandHandler) RegisterCommands(s *discordgo.Session) error {
 				},
 			},
 		},
+		{
+			Name:        "help",
+			Description: "Show all available commands and how to use them",
+		},
 	}
 
 	for _, cmd := range commands {
@@ -248,6 +252,8 @@ func (h *CommandHandler) HandleCommands(s *discordgo.Session) {
 			h.handleSetLanguage(s, i)
 		case "set-channel-language":
 			h.handleSetChannelLanguage(s, i)
+		case "help":
+			h.handleHelp(s, i)
 		}
 	})
 }
@@ -1259,4 +1265,30 @@ func (h *CommandHandler) followUpSuccess(s *discordgo.Session, i *discordgo.Inte
 	if err != nil {
 		log.Printf("Error sending follow-up success: %v", err)
 	}
+}
+
+// handleHelp handles the /help command
+func (h *CommandHandler) handleHelp(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	help := "📚 **Guara Bot - Command Reference**\n\n" +
+		"**📰 Feed Management** (Admin)\n" +
+		"• `/register-feed` - Register a new RSS feed\n" +
+		"• `/unregister-feed` - Remove an RSS feed\n" +
+		"• `/list-feeds` - List all registered feeds\n" +
+		"• `/schedule-feed` - Set check times for a feed (e.g., 09:00,18:00)\n\n" +
+		"**📢 Channel Setup** (Admin)\n" +
+		"• `/setup-news` - Subscribe a channel to receive news from a feed\n" +
+		"• `/remove-news` - Unsubscribe a channel from a feed\n" +
+		"• `/list-channels` - List all channels receiving news updates\n\n" +
+		"**🔄 Manual Updates** (Admin)\n" +
+		"• `/update-news` - Force immediate check for a specific feed\n" +
+		"• `/update-all-news` - Force immediate check for all feeds\n\n" +
+		"**🌍 Language Settings** (Admin)\n" +
+		"• `/set-language` - Set server default language for summaries\n" +
+		"• `/set-channel-language` - Set language for a specific channel\n\n" +
+		"**ℹ️ Information**\n" +
+		"• `/help` - Show this help message\n\n" +
+		"**Supported Languages:** 🇧🇷 Português | 🇺🇸 English | 🇪🇸 Español | 🇫🇷 Français | 🇩🇪 Deutsch | 🇯🇵 日本語\n\n" +
+		"💡 **Tip:** Most commands require the **Manage Server** permission."
+
+	h.respondSuccess(s, i, help)
 }
