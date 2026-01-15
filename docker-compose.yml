@@ -4,7 +4,7 @@ services:
   # Redis service for bot storage
   redis:
     image: redis:7-alpine
-    container_name: godot-news-redis
+    container_name: guara-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -18,14 +18,14 @@ services:
       retries: 3
       start_period: 5s
     networks:
-      - godot-bot-network
+      - guara-bot-network
 
-  # Godot News Bot service
+  # Guara Bot service
   bot:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: godot-news-bot
+    container_name: guara-bot
     restart: unless-stopped
     depends_on:
       redis:
@@ -41,11 +41,17 @@ services:
       MAX_CHANNELS_LIMIT: ${MAX_CHANNELS_LIMIT:-5}
       CHECK_INTERVAL_MINUTES: ${CHECK_INTERVAL_MINUTES:-15}
       
+      # GitHub integration (optional)
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_CHECK_INTERVAL_MINUTES: ${GITHUB_CHECK_INTERVAL_MINUTES:-30}
+      GITHUB_BATCH_THRESHOLD: ${GITHUB_BATCH_THRESHOLD:-5}
+      GITHUB_FILTER_MIN_CHANGES: ${GITHUB_FILTER_MIN_CHANGES:-5}
+      
       # Redis configuration
       REDIS_URL: redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     networks:
-      - godot-bot-network
+      - guara-bot-network
     logging:
       driver: "json-file"
       options:
@@ -57,5 +63,5 @@ volumes:
     driver: local
 
 networks:
-  godot-bot-network:
+  guara-bot-network:
     driver: bridge

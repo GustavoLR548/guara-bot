@@ -36,8 +36,8 @@ go run ./cmd/bot
 /setup-news #channel [feed]     # Subscribe channel to feed (defaults to godot-official)
 /remove-news #channel [feed]    # Unsubscribe channel from feed
 /list-channels                  # List all channels and subscriptions
-/update-news [feed]             # Force check specific feed (defaults to godot-official)
-/update-all-news                # Force check all feeds immediately
+/update-news [feed]             # Force check specific RSS feed (defaults to godot-official)
+/update-all-news                # Force check all RSS feeds immediately
 ```
 
 ### Feed Management
@@ -58,6 +58,61 @@ go run ./cmd/bot
 ```bash
 /help  # Display all available commands organized by category
 ```
+
+### GitHub Repository Monitoring
+```bash
+/register-repo <id> <owner> <repo> [branch]    # Register GitHub repository
+/unregister-repo <id>                           # Remove repository
+/list-repos                                     # Show all registered repos with stats
+/setup-repo-channel #channel <id>              # Subscribe channel (use repo ID)
+/remove-repo-channel #channel <id>             # Unsubscribe channel (use repo ID)
+/schedule-repo <id> <times>                    # Set check times (use repo ID)
+/update-repo <id>                              # Force check specific repository
+/update-all-repos                              # Force check all repositories
+```
+
+**GitHub Examples:**
+```bash
+# Step 1: Register a repository with a custom ID
+/register-repo godot-engine godotengine godot main
+#              └─ Your ID  └─ Owner   └─ Repo └─ Branch
+
+# Step 2: Subscribe a channel (use the same ID)
+/setup-repo-channel #updates godot-engine
+#                            └─ Same ID from registration
+#   → If PRs were already detected, they'll be posted immediately!
+#   → Bot processes 5 PRs per batch
+
+# Step 3: Set schedule (use the same ID)
+/schedule-repo godot-engine 09:00,13:00,18:00
+#              └─ Same ID  └─ Check at 9 AM, 1 PM, 6 PM
+
+# List all repos with stats
+/list-repos
+
+# Force check for updates (processes one batch if PRs are pending)
+/update-repo godot-engine
+#   → Checks GitHub for new PRs AND processes pending queue
+#   → Processes max 5 PRs per call
+
+# More examples with different repos
+/register-repo rust-lang rust-lang rust master
+/setup-repo-channel #rust-updates rust-lang
+/schedule-repo rust-lang 10:00,16:00
+```
+
+**Batch Processing Behavior:**
+- Bot fetches PRs from **last 3 days** (older PRs are automatically ignored)
+- Processes maximum **5 PRs per batch** to stay within AI token limits
+- **One batch at a time**: Bot processes 5 PRs, then waits for next scheduled check
+- Schedule-based: If you have 42 PRs pending, bot will process them gradually:
+  - First check: 5 PRs posted (37 remaining)
+  - Next check: 5 PRs posted (32 remaining)
+  - Continues until queue is empty
+- `/update-repo` command: Manually trigger one batch processing
+- Example: 42 pending PRs with 3 scheduled times daily = ~3 days to clear queue
+
+**Note:** PRs detected before any channel is registered are kept in a pending queue. When you register a channel with `/setup-repo-channel`, pending PRs will be processed gradually according to schedule!
 
 **Supported Languages:**
 - 🇧🇷 `pt-BR` - Português (Brasil)
@@ -148,6 +203,13 @@ redis-cli KEYS "news:channels:*:feeds"
 # Language preferences
 redis-cli GET news:guilds:GUILD_ID:language       # Guild default language
 redis-cli GET news:channels:CHANNEL_ID:language   # Channel language override
+
+# GitHub repositories
+redis-cli KEYS "github:repos:*"                   # List all repos
+redis-cli HGETALL github:repos:REPO_ID            # Repo details
+redis-cli LRANGE github:repos:REPO_ID:schedule 0 -1  # Repo schedule
+redis-cli LRANGE github:repos:REPO_ID:pending 0 -1   # Pending PRs
+redis-cli SMEMBERS github:repos:REPO_ID:channels     # Subscribed channels
 ```
 
 ## Docker Management
@@ -202,6 +264,12 @@ MAX_CHANNELS_LIMIT=5              # Optional (default: 5)
 CHECK_INTERVAL_MINUTES=15         # Optional (fallback for feeds without schedules)
 REDIS_URL=localhost:6379          # Optional
 REDIS_PASSWORD=                   # Optional
+
+# GitHub Integration (Optional)
+GITHUB_TOKEN=                     # GitHub Personal Access Token
+GITHUB_CHECK_INTERVAL_MINUTES=30  # Fallback for repos without schedules
+GITHUB_BATCH_THRESHOLD=5          # PRs needed to trigger summary
+GITHUB_FILTER_MIN_CHANGES=5       # Minimum line changes
 
 # Rate Limiting (Optional - Gemini Free Tier Protection)
 GEMINI_MAX_REQUESTS_PER_MINUTE=10

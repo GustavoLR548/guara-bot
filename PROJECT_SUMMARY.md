@@ -106,6 +106,30 @@ go test -cover ./... # With coverage
 | `/set-channel-language #channel [lang]` | Override language for specific channel | Manage Server |
 | `/help` | Display all available commands with descriptions | Anyone |
 
+### GitHub Repository Monitoring
+
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `/register-repo <id> <owner> <repo> [branch]` | Register GitHub repository to monitor PRs | Manage Server |
+| `/unregister-repo <id>` | Remove GitHub repository | Manage Server |
+| `/list-repos` | Show all registered repositories with stats | Manage Server |
+| `/setup-repo-channel #channel <id>` | Subscribe channel to PR summaries (use repo ID) | Manage Server |
+| `/remove-repo-channel #channel <id>` | Unsubscribe channel from PR summaries (use repo ID) | Manage Server |
+| `/schedule-repo <id> <times>` | Set check times for repository (use repo ID, e.g., 09:00,13:00,18:00) | Manage Server |
+
+**GitHub Features:**
+- Monitor merged Pull Requests from specified repositories
+- High-value filtering (by labels, changed files, min changes)
+- Auto-categorization (Features, Bugfixes, Performance, UI/UX, Security)
+- Batched AI-generated summaries with "Why it matters" explanations
+- **Multilingual support** (same 6 languages as RSS feeds: pt-BR, en, es, fr, de, ja)
+- **Smart grouping**: One summary per language, shared across channels
+- **Language detection**: Uses channel → guild → English hierarchy
+- Time-based scheduling per repository (same as RSS feeds)
+- Many-to-many channel subscriptions
+- Deduplication with 90-day memory
+- Configurable batch threshold and check interval
+
 ## Configuration
 
 ```env
@@ -118,6 +142,12 @@ MAX_CHANNELS_LIMIT=5
 CHECK_INTERVAL_MINUTES=15           # Fallback for feeds without schedules
 REDIS_URL=localhost:6379
 REDIS_PASSWORD=
+
+# GitHub Integration (Optional)
+GITHUB_TOKEN=your_github_pat                     # GitHub Personal Access Token
+GITHUB_CHECK_INTERVAL_MINUTES=30                 # Fallback for repos without schedules
+GITHUB_BATCH_THRESHOLD=5                         # PRs needed to trigger summary
+GITHUB_FILTER_MIN_CHANGES=5                      # Minimum line changes for filtering
 
 # Rate Limiting (Optional - Gemini Free Tier Protection)
 GEMINI_MAX_REQUESTS_PER_MINUTE=10        # Conservative: below 15 RPM limit
@@ -146,6 +176,15 @@ news:feeds:{feedID}:history:{guid}→ STRING "posted" (90-day TTL)
 # Language Preferences
 news:guilds:{guildID}:language    → STRING (language code, default: pt-BR)
 news:channels:{channelID}:language→ STRING (optional override)
+
+# GitHub Repository Monitoring
+github:repos:{repoID}               → HASH (owner, name, target_branch, added_at)
+github:repos:{repoID}:schedule      → LIST of check times (HH:MM format)
+github:repos:{repoID}:processed     → SET of PR IDs (90-day TTL)
+github:repos:{repoID}:pending       → LIST of JSON-serialized PRs
+github:repos:{repoID}:channels      → SET of channel IDs
+github:channels:{channelID}:repos   → SET of repo IDs
+github:repos:{repoID}:last_checked  → Unix timestamp
 ```
 
 ### Language Detection Flow

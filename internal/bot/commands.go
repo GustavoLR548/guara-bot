@@ -11,17 +11,20 @@ import (
 
 // CommandHandler handles Discord slash commands
 type CommandHandler struct {
-	channelRepo storage.ChannelRepository
-	feedRepo    storage.FeedRepository
-	maxLimit    int
-	bot         *Bot // Reference to bot for triggering updates
+	channelRepo   storage.ChannelRepository
+	feedRepo      storage.FeedRepository
+	githubRepo    storage.GitHubRepository
+	maxLimit      int
+	bot           *Bot           // Reference to bot for triggering updates
+	githubMonitor *GitHubMonitor // Reference to GitHub monitor for triggering updates
 }
 
 // NewCommandHandler creates a new command handler
-func NewCommandHandler(channelRepo storage.ChannelRepository, feedRepo storage.FeedRepository, maxLimit int) *CommandHandler {
+func NewCommandHandler(channelRepo storage.ChannelRepository, feedRepo storage.FeedRepository, githubRepo storage.GitHubRepository, maxLimit int) *CommandHandler {
 	return &CommandHandler{
 		channelRepo: channelRepo,
 		feedRepo:    feedRepo,
+		githubRepo:  githubRepo,
 		maxLimit:    maxLimit,
 	}
 }
@@ -29,6 +32,11 @@ func NewCommandHandler(channelRepo storage.ChannelRepository, feedRepo storage.F
 // SetBot sets the bot reference (called after bot is created)
 func (h *CommandHandler) SetBot(bot *Bot) {
 	h.bot = bot
+}
+
+// SetGitHubMonitor sets the GitHub monitor reference (called after monitor is created)
+func (h *CommandHandler) SetGitHubMonitor(monitor *GitHubMonitor) {
+	h.githubMonitor = monitor
 }
 
 // RegisterCommands registers all slash commands with Discord
@@ -213,6 +221,129 @@ func (h *CommandHandler) RegisterCommands(s *discordgo.Session) error {
 			Name:        "help",
 			Description: "Show all available commands and how to use them",
 		},
+		// GitHub Repository Commands
+		{
+			Name:        "register-repo",
+			Description: "Register a GitHub repository to monitor for PR updates",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "id",
+					Description: "Unique identifier for this repository (e.g., 'godot-engine')",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "owner",
+					Description: "Repository owner (e.g., 'godotengine')",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "repo",
+					Description: "Repository name (e.g., 'godot')",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "branch",
+					Description: "Target branch to monitor (default: 'main')",
+					Required:    false,
+				},
+			},
+		},
+		{
+			Name:        "unregister-repo",
+			Description: "Remove a GitHub repository from monitoring",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "id",
+					Description: "Repository identifier",
+					Required:    true,
+				},
+			},
+		},
+		{
+			Name:        "list-repos",
+			Description: "List all registered GitHub repositories",
+		},
+		{
+			Name:        "setup-repo-channel",
+			Description: "Configure a channel to receive PR summaries from a repository",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionChannel,
+					Name:        "channel",
+					Description: "The channel to setup for PR updates",
+					Required:    true,
+					ChannelTypes: []discordgo.ChannelType{
+						discordgo.ChannelTypeGuildText,
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "repo",
+					Description: "Repository identifier",
+					Required:    true,
+				},
+			},
+		},
+		{
+			Name:        "remove-repo-channel",
+			Description: "Remove a channel from receiving PR summaries",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionChannel,
+					Name:        "channel",
+					Description: "The channel to remove",
+					Required:    true,
+					ChannelTypes: []discordgo.ChannelType{
+						discordgo.ChannelTypeGuildText,
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "repo",
+					Description: "Repository identifier",
+					Required:    true,
+				},
+			},
+		},
+		{
+			Name:        "schedule-repo",
+			Description: "Set check times for a GitHub repository (e.g., 09:00,13:00,18:00)",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "repo",
+					Description: "Repository identifier",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "times",
+					Description: "Comma-separated check times in HH:MM format (empty to use interval)",
+					Required:    true,
+				},
+			},
+		},
+		{
+			Name:        "update-repo",
+			Description: "Force an immediate check for a specific GitHub repository",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "repo",
+					Description: "Repository identifier",
+					Required:    true,
+				},
+			},
+		},
+		{
+			Name:        "update-all-repos",
+			Description: "Force an immediate check for all registered GitHub repositories",
+		},
 	}
 
 	for _, cmd := range commands {
@@ -254,6 +385,23 @@ func (h *CommandHandler) HandleCommands(s *discordgo.Session) {
 			h.handleSetChannelLanguage(s, i)
 		case "help":
 			h.handleHelp(s, i)
+		// GitHub repository commands
+		case "register-repo":
+			h.handleRegisterRepo(s, i)
+		case "unregister-repo":
+			h.handleUnregisterRepo(s, i)
+		case "list-repos":
+			h.handleListRepos(s, i)
+		case "setup-repo-channel":
+			h.handleSetupRepoChannel(s, i)
+		case "remove-repo-channel":
+			h.handleRemoveRepoChannel(s, i)
+		case "schedule-repo":
+			h.handleScheduleRepo(s, i)
+		case "update-repo":
+			h.handleUpdateRepo(s, i)
+		case "update-all-repos":
+			h.handleUpdateAllRepos(s, i)
 		}
 	})
 }
@@ -555,33 +703,80 @@ func (h *CommandHandler) handleListChannels(s *discordgo.Session, i *discordgo.I
 		return
 	}
 
-	// Get all channels
-	channels, err := h.channelRepo.GetAllChannels()
+	// Get all RSS channels
+	rssChannels, err := h.channelRepo.GetAllChannels()
 	if err != nil {
-		log.Printf("Error getting channels: %v", err)
+		log.Printf("Error getting RSS channels: %v", err)
 		h.respondError(s, i, "Error fetching channels.")
 		return
 	}
 
-	if len(channels) == 0 {
-		h.respondSuccess(s, i, "📋 **No registered channels**\n\nUse `/setup-news` in a channel to start receiving news.")
+	// Get all GitHub repositories and their channels
+	githubRepos, err := h.githubRepo.GetAllRepositories()
+	if err != nil {
+		log.Printf("Error getting GitHub repos: %v", err)
+		// Continue even if GitHub query fails
+		githubRepos = nil
+	}
+
+	// Build channel map for GitHub repos
+	githubChannelMap := make(map[string][]string) // channelID -> []repoIDs
+	for _, repo := range githubRepos {
+		channels, err := h.githubRepo.GetRepoChannels(repo.ID)
+		if err == nil {
+			for _, channelID := range channels {
+				githubChannelMap[channelID] = append(githubChannelMap[channelID], repo.ID)
+			}
+		}
+	}
+
+	// Check if we have any subscriptions
+	if len(rssChannels) == 0 && len(githubChannelMap) == 0 {
+		h.respondSuccess(s, i, "📋 **No registered channels**\n\nUse `/setup-news` for RSS feeds or `/setup-repo-channel` for GitHub repositories.")
 		return
 	}
 
-	// Build channel list
+	// Build response
 	var response string
-	response = fmt.Sprintf("📋 **Registered Channels** (%d/%d)\n\n", len(channels), h.maxLimit)
+	response = "📋 **Registered Channels**\n\n"
 
-	for i, channelID := range channels {
-		// Use simple channel mention format
-		response += fmt.Sprintf("%d. <#%s>\n", i+1, channelID)
+	// List RSS channels
+	if len(rssChannels) > 0 {
+		response += fmt.Sprintf("**📰 RSS News** (%d channels):\n", len(rssChannels))
+		for i, channelID := range rssChannels {
+			response += fmt.Sprintf("%d. <#%s>\n", i+1, channelID)
+		}
+		response += "\n"
 	}
 
-	response += fmt.Sprintf("\n💡 Use `/remove-news` in a channel to remove it from the list.")
+	// List GitHub channels
+	if len(githubChannelMap) > 0 {
+		response += fmt.Sprintf("**🐙 GitHub PRs** (%d channels):\n", len(githubChannelMap))
+		idx := 1
+		for channelID, repoIDs := range githubChannelMap {
+			response += fmt.Sprintf("%d. <#%s> (repos: %s)\n", idx, channelID, joinStrings(repoIDs, ", "))
+			idx++
+		}
+		response += "\n"
+	}
+
+	response += "💡 Use `/remove-news` for RSS or `/remove-repo-channel` for GitHub subscriptions."
 
 	h.respondSuccess(s, i, response)
 
 	log.Printf("Channel list requested by user in guild %s", i.GuildID)
+}
+
+// joinStrings is a simple helper to join strings with a separator
+func joinStrings(strs []string, sep string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	result := strs[0]
+	for i := 1; i < len(strs); i++ {
+		result += sep + strs[i]
+	}
+	return result
 }
 
 // handleUpdateNews handles the /update-news command (specific feed)
@@ -1270,18 +1465,29 @@ func (h *CommandHandler) followUpSuccess(s *discordgo.Session, i *discordgo.Inte
 // handleHelp handles the /help command
 func (h *CommandHandler) handleHelp(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	help := "📚 **Guara Bot - Command Reference**\n\n" +
-		"**📰 Feed Management** (Admin)\n" +
+		"**📰 RSS Feed Management** (Admin)\n" +
 		"• `/register-feed` - Register a new RSS feed\n" +
 		"• `/unregister-feed` - Remove an RSS feed\n" +
 		"• `/list-feeds` - List all registered feeds\n" +
 		"• `/schedule-feed` - Set check times for a feed (e.g., 09:00,18:00)\n\n" +
-		"**📢 Channel Setup** (Admin)\n" +
+		"**📢 RSS Channel Setup** (Admin)\n" +
 		"• `/setup-news` - Subscribe a channel to receive news from a feed\n" +
-		"• `/remove-news` - Unsubscribe a channel from a feed\n" +
-		"• `/list-channels` - List all channels receiving news updates\n\n" +
+		"• `/remove-news` - Unsubscribe a channel from a feed\n\n" +
+		"**🐙 GitHub Repository Management** (Admin)\n" +
+		"• `/register-repo` - Register a GitHub repository to monitor PRs\n" +
+		"• `/unregister-repo` - Remove a GitHub repository\n" +
+		"• `/list-repos` - List all registered repositories\n" +
+		"• `/schedule-repo` - Set check times for a repository\n\n" +
+		"**🔔 GitHub Channel Setup** (Admin)\n" +
+		"• `/setup-repo-channel` - Subscribe a channel to receive PR summaries\n" +
+		"• `/remove-repo-channel` - Unsubscribe a channel from PR summaries\n\n" +
+		"**📋 View Subscriptions** (Admin)\n" +
+		"• `/list-channels` - List all RSS and GitHub channel subscriptions\n\n" +
 		"**🔄 Manual Updates** (Admin)\n" +
-		"• `/update-news` - Force immediate check for a specific feed\n" +
-		"• `/update-all-news` - Force immediate check for all feeds\n\n" +
+		"• `/update-news` - Force immediate check for a specific RSS feed\n" +
+		"• `/update-all-news` - Force immediate check for all RSS feeds\n" +
+		"• `/update-repo` - Force immediate check for a specific GitHub repository\n" +
+		"• `/update-all-repos` - Force immediate check for all GitHub repositories\n\n" +
 		"**🌍 Language Settings** (Admin)\n" +
 		"• `/set-language` - Set server default language for summaries\n" +
 		"• `/set-channel-language` - Set language for a specific channel\n\n" +

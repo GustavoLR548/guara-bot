@@ -365,8 +365,6 @@ func TestGeminiSummarizer_ResetRateLimits(t *testing.T) {
 
 // TestGeminiSummarizer_ShouldRetry tests retry logic
 func TestGeminiSummarizer_ShouldRetry(t *testing.T) {
-	summarizer := NewGeminiSummarizer("fake-api-key")
-	
 	tests := []struct {
 		name         string
 		err          error
@@ -421,7 +419,7 @@ func TestGeminiSummarizer_ShouldRetry(t *testing.T) {
 	
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := summarizer.shouldRetry(tt.err)
+			result := ShouldRetry(tt.err)
 			assert.Equal(t, tt.shouldRetry, result)
 		})
 	}

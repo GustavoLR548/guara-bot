@@ -11,6 +11,7 @@ import (
 
 	"github.com/GustavoLR548/godot-news-bot/internal/ai"
 	"github.com/GustavoLR548/godot-news-bot/internal/bot"
+	"github.com/GustavoLR548/godot-news-bot/internal/github"
 	"github.com/GustavoLR548/godot-news-bot/internal/news"
 	"github.com/GustavoLR548/godot-news-bot/internal/ratelimit"
 	"github.com/GustavoLR548/godot-news-bot/internal/storage"
@@ -42,6 +43,9 @@ func main() {
 		log.Fatal("GEMINI_API_KEY is required")
 	}
 
+	githubToken := os.Getenv("GITHUB_TOKEN")
+	// GitHub is optional - if no token provided, GitHub monitoring will be disabled
+
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
 		redisURL = "localhost:6379" // default
@@ -64,7 +68,7 @@ func main() {
 		RetryBackoffBase:        time.Duration(getEnvAsInt("GEMINI_RETRY_BACKOFF_SECONDS", 1)) * time.Second,
 	}
 
-	log.Printf("Starting Guara Bot - RSS News Aggregator (Max Channels: %d, Check Interval: %v)", maxChannels, checkInterval)
+	log.Printf("Starting Guara Bot (Max Channels: %d, Check Interval: %v)", maxChannels, checkInterval)
 	log.Printf("Rate Limiting: %d RPM, %d TPM, Circuit Breaker: %d failures", 
 		rateLimitConfig.MaxRequestsPerMinute, 
 		rateLimitConfig.MaxTokensPerMinute,
@@ -94,6 +98,7 @@ func main() {
 
 	historyRepo := storage.NewRedisHistoryRepository(redisClient)
 	feedRepo := storage.NewRedisFeedRepository(redisClient)
+	githubRepo := storage.NewRedisGitHubRepository(redisClient)
 
 	// Register default feed for backward compatibility
 	defaultFeed := storage.Feed{
@@ -126,6 +131,22 @@ func main() {
 	// Initialize AI summarizer with rate limiting
 	aiSummarizer := ai.NewGeminiSummarizerWithRateLimit(geminiAPIKey, rateLimitConfig)
 
+	// Initialize GitHub client if token is provided
+	var githubClient *github.Client
+	var githubMonitor *bot.GitHubMonitor
+	if githubToken != "" {
+		log.Println("GitHub token provided, enabling GitHub PR monitoring")
+		githubClient = github.NewClient(githubToken)
+		
+		// Create PR summarizer
+		prSummarizer := ai.NewGeminiPRSummarizer(aiSummarizer)
+		
+		// Note: githubMonitor will be initialized after Discord session is created
+		_ = prSummarizer // We'll use this later
+	} else {
+		log.Println("No GitHub token provided, GitHub PR monitoring disabled")
+	}
+
 	// Create Discord session
 	dg, err := discordgo.New("Bot " + discordToken)
 	if err != nil {
@@ -135,8 +156,14 @@ func main() {
 	// Set intents
 	dg.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages
 
-	// Create command handler
-	commandHandler := bot.NewCommandHandler(channelRepo, feedRepo, maxChannels)
+	// Create command handler with GitHub repo
+	commandHandler := bot.NewCommandHandler(channelRepo, feedRepo, githubRepo, maxChannels)
+
+	// Initialize GitHub monitor if enabled
+	if githubClient != nil {
+		prSummarizer := ai.NewGeminiPRSummarizer(aiSummarizer)
+		githubMonitor = bot.NewGitHubMonitor(dg, githubClient, githubRepo, prSummarizer)
+	}
 
 	// Register commands and handlers
 	dg.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
@@ -174,8 +201,19 @@ func main() {
 	// Connect bot to command handler
 	commandHandler.SetBot(newsBot)
 
+	// Connect GitHub monitor to command handler if enabled
+	if githubMonitor != nil {
+		commandHandler.SetGitHubMonitor(githubMonitor)
+	}
+
 	// Start news loop in goroutine
 	go newsBot.Start()
+
+	// Start GitHub monitoring if enabled
+	if githubMonitor != nil {
+		log.Println("Starting GitHub PR monitoring...")
+		go githubMonitor.Start(context.Background())
+	}
 
 	// Wait for interrupt signal
 	sc := make(chan os.Signal, 1)

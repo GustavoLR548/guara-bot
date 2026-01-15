@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - TBD
+
+### Added
+- **GitHub Repository Provider**: Complete GitHub PR monitoring integration
+  - Monitor merged Pull Requests from any public GitHub repository
+  - High-value filtering: filter PRs by labels, changed files, and minimum line changes
+  - Auto-categorization: Features, Bugfixes, Performance, UI/UX, Security, Dependencies, Documentation
+  - Batched AI summaries with "Why it matters" developer-focused explanations
+  - Many-to-many subscriptions: any channel can subscribe to any repo
+  - Deduplication with 90-day memory using Redis sets
+  - Time-based scheduling per repository (same pattern as RSS feeds)
+  - Configurable batch threshold (default: 5 PRs) and check interval
+- **GitHub Commands** (7 new commands):
+  - `/register-repo <id> <owner> <repo> [branch]` - Register repository with custom ID
+  - `/unregister-repo <id>` - Remove repository and cleanup all data
+  - `/list-repos` - Show registered repos with stats (pending PRs, subscribed channels)
+  - `/setup-repo-channel #channel <id>` - Subscribe channel (use repo ID from registration)
+  - `/remove-repo-channel #channel <id>` - Unsubscribe channel (use repo ID)
+  - `/schedule-repo <id> <times>` - Set check times using repo ID (e.g., 09:00,13:00,18:00)
+  - Permission-gated: all commands require "Manage Server" permission
+  - Note: All channel and scheduling commands use the repository ID, not owner/repo
+- **GitHub Redis Schema** (8 new key patterns):
+  - `github:repos:{repoID}` - Repository metadata (owner, name, branch, added_at)
+  - `github:repos:{repoID}:schedule` - Check times in HH:MM format (LIST)
+  - `github:repos:{repoID}:processed` - Deduplicated PR IDs (SET with 90-day TTL)
+  - `github:repos:{repoID}:pending` - Batched PRs awaiting summary (LIST)
+  - `github:repos:{repoID}:channels` - Subscribed channel IDs (SET)
+  - `github:channels:{channelID}:repos` - Repo subscriptions per channel (SET)
+  - `github:repos:{repoID}:last_checked` - Unix timestamp for interval tracking
+- **GitHub Architecture**:
+  - `internal/github/models.go` - Repository, PullRequest, and Filter models
+  - `internal/github/client.go` - GitHub API v4 GraphQL client with pagination
+  - `internal/storage/github_repository.go` - 18 Redis operations for GitHub data
+  - `internal/ai/github_summarizer.go` - Batch PR summarization with categorization
+  - `internal/bot/github_monitor.go` - Schedule-aware monitoring loop (1-minute ticker)
+  - `internal/bot/github_commands.go` - 7 Discord command handlers
+- **GitHub Monitoring Features**:
+  - Smart checking: schedule-based (matches RSS feeds) or interval fallback
+  - Schedule validation: HH:MM format with time.Parse("15:04")
+  - Atomic Redis operations: pipelines for multi-key updates
+  - Robust error handling: continues on single repo failures
+  - Per-repository configuration: branch targeting, custom schedules
+  - **Multilingual PR summaries**: Supports all 6 languages (pt-BR, en, es, fr, de, ja)
+  - **Smart language grouping**: Generates one summary per language, shared across channels
+  - **Language detection**: Channel override → Guild default → English (same as RSS feeds)
+  - Reuses existing language preference system (news:channels/guilds keys)
+
 ## [1.4.0] - TBD
 
 ### Added
