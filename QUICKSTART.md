@@ -3,6 +3,7 @@
 ## Setup
 
 1. **Install Redis:**
+
 ```bash
 # Ubuntu/Debian
 sudo apt install redis-server
@@ -13,18 +14,21 @@ brew services start redis
 ```
 
 2. **Configure bot:**
+
 ```bash
 cp .env.example .env
 # Edit .env with your tokens
 ```
 
 3. **Run with Docker:**
+
 ```bash
 docker-compose up -d
 docker-compose logs -f bot
 ```
 
 Or locally:
+
 ```bash
 go run ./cmd/bot
 ```
@@ -32,6 +36,7 @@ go run ./cmd/bot
 ## Discord Commands
 
 ### Channel Management
+
 ```bash
 /setup-news #channel [feed]     # Subscribe channel to feed (defaults to godot-official)
 /remove-news #channel [feed]    # Unsubscribe channel from feed
@@ -41,6 +46,7 @@ go run ./cmd/bot
 ```
 
 ### Feed Management
+
 ```bash
 /register-feed <id> <url> [title] [description]  # Register new RSS feed
 /unregister-feed <id>                            # Remove RSS feed
@@ -49,17 +55,20 @@ go run ./cmd/bot
 ```
 
 ### Language Configuration
+
 ```bash
 /set-language <language>                 # Set server default language
 /set-channel-language #channel [language] # Override language for specific channel
 ```
 
 ### Help & Information
+
 ```bash
 /help  # Display all available commands organized by category
 ```
 
 ### GitHub Repository Monitoring
+
 ```bash
 /register-repo <id> <owner> <repo> [branch]    # Register GitHub repository
 /unregister-repo <id>                           # Remove repository
@@ -72,6 +81,7 @@ go run ./cmd/bot
 ```
 
 **GitHub Examples:**
+
 ```bash
 # Step 1: Register a repository with a custom ID
 /register-repo godot-engine godotengine godot main
@@ -102,6 +112,7 @@ go run ./cmd/bot
 ```
 
 **Batch Processing Behavior:**
+
 - Bot fetches PRs from **last 3 days** (older PRs are automatically ignored)
 - Processes maximum **5 PRs per batch** to stay within AI token limits
 - **One batch at a time**: Bot processes 5 PRs, then waits for next scheduled check
@@ -112,9 +123,30 @@ go run ./cmd/bot
 - `/update-repo` command: Manually trigger one batch processing
 - Example: 42 pending PRs with 3 scheduled times daily = ~3 days to clear queue
 
+**High-Value PR Filtering:**
+
+- **Whitelist labels**: bug, enhancement, performance, optimization, usability, accessibility, security
+- **Minimum line changes**: 5 (configurable via `GITHUB_FILTER_MIN_CHANGES`)
+- **Auto-rejection**: Documentation-only, trivial changes, unlabeled minor PRs
+- **Example logs in console**:
+  ```
+  [GITHUB-CLIENT] ✅ PR #114978 accepted (label: bug, changes: 14 lines)
+  [GITHUB-CLIENT] ❌ PR #114979 rejected (too few changes: 1 < 5)
+  [GITHUB-MONITOR] Total fetched: 2, Already processed: 0, Filtered out: 1, Accepted: 1
+  ```
+
+**Auto-Categorization:**
+
+- **Features**: New capabilities and enhancements
+- **Bugfixes**: Bug fixes and corrections
+- **Performance**: Optimizations and speed improvements
+- **UI/UX**: Interface and usability improvements
+- **Security**: Security patches and vulnerability fixes
+
 **Note:** PRs detected before any channel is registered are kept in a pending queue. When you register a channel with `/setup-repo-channel`, pending PRs will be processed gradually according to schedule!
 
 **Supported Languages:**
+
 - 🇧🇷 `pt-BR` - Português (Brasil)
 - 🇺🇸 `en` - English
 - 🇪🇸 `es` - Español
@@ -123,6 +155,7 @@ go run ./cmd/bot
 - 🇯🇵 `ja` - 日本語
 
 **Examples:**
+
 ```bash
 # Register feeds from different sources
 /register-feed godot https://godotengine.org/rss.xml "Godot Engine" "Game engine news"
@@ -145,6 +178,7 @@ go run ./cmd/bot
 ```
 
 **Multi-Language Setup:**
+
 ```bash
 # International community with language-specific channels
 /set-language en                      # Server defaults to English
@@ -156,6 +190,7 @@ go run ./cmd/bot
 ```
 
 **How Language Detection Works:**
+
 1. Checks if channel has specific language override
 2. Falls back to guild/server default language
 3. Falls back to English (en) if nothing is set
@@ -234,15 +269,18 @@ docker-compose exec redis redis-cli flushall
 ## Troubleshooting
 
 **Bot not connecting:**
+
 - Check `DISCORD_TOKEN` in `.env`
 - Verify bot has permissions in Discord Developer Portal
 
 **Redis connection failed:**
+
 ```bash
 redis-cli ping  # Should return PONG
 ```
 
 **No news posting:**
+
 - Check `/list-channels` - at least 1 channel must be subscribed
 - Check `/list-feeds` - verify feeds are registered
 - Verify feed schedules with `/list-feeds` (or set with `/schedule-feed`)
@@ -250,6 +288,7 @@ redis-cli ping  # Should return PONG
 - View logs: `docker-compose logs bot`
 
 **Feed not updating:**
+
 - Check feed URL is accessible: `curl <feed-url>`
 - Verify schedule is set: `/list-feeds`
 - Check if it's the scheduled time (bot checks every minute)
@@ -294,4 +333,3 @@ Replace `YOUR_CLIENT_ID` with your bot's ID from Discord Developer Portal.
 - Setup automatic monitoring in your Discord server
 - Configure Redis persistence for production
 - Check [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) for architecture details
-

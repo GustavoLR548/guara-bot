@@ -10,7 +10,7 @@ graph TB
     Bot[Bot<br/>Go 1.23]
     Redis[Redis Storage]
     Gemini[Gemini AI<br/>2.5 Flash]
-    
+
     Discord <--> Bot
     Bot <--> Redis
     Bot --> Gemini
@@ -19,6 +19,14 @@ graph TB
 ### Components
 
 **Bot Core** (`internal/bot/`)
+
+- **Modular command architecture** with separate handlers:
+  - `commands.go` (457 lines): Command registration and routing
+  - `rss_commands.go` (870 lines): RSS feed management handlers
+  - `language_commands.go` (137 lines): Language configuration handlers
+  - `command_utils.go` (77 lines): Shared utility functions
+  - `github_commands.go` (482 lines): GitHub repository handlers
+  - `github_monitor.go` (527 lines): GitHub PR monitoring engine
 - Slash command handlers for feed and channel management
 - Time-based scheduling per feed (HH:MM format)
 - Multi-feed support with independent processing
@@ -28,6 +36,7 @@ graph TB
 - Permission validation (Manage Server required)
 
 **Storage** (`internal/storage/`)
+
 - Redis persistence with 5-second timeout
 - Channel-Feed many-to-many relationships (SET)
 - Feed repository with CRUD operations (HASH)
@@ -37,12 +46,14 @@ graph TB
 - Per-feed article history (STRING with 90-day TTL)
 
 **Feed Management** (`internal/storage/`)
+
 - FeedRepository: Register/unregister feeds
 - Feed metadata: ID, URL, Title, Description, AddedAt, Schedule
 - Schedule validation (24-hour HH:MM format)
 - Many-to-many channel-feed associations
 
 **AI Summarization** (`internal/ai/`)
+
 - Google Gemini 2.5 Flash
 - Multilingual generation in 6 languages (pt-BR, en, es, fr, de, ja)
 - JSON response format with translated titles and summaries
@@ -54,11 +65,35 @@ graph TB
 - Title validation and truncation (max 256 chars for Discord)
 
 **RSS Processor** (`internal/news/`)
+
 - gofeed v1.3.0 for parsing
 - go-readability for HTML extraction
 - Per-feed GUID-based deduplication
 
+**GitHub Integration** (`internal/github/`)
+
+- GitHub API client for fetching merged PRs
+- High-value PR filtering:
+  - Whitelist labels: bug, enhancement, performance, optimization, usability, accessibility, security
+  - Minimum line changes threshold (default: 5 lines)
+  - Automatic rejection of low-impact PRs
+- Auto-categorization engine:
+  - Features: new capabilities and enhancements
+  - Bugfixes: bug fixes and corrections
+  - Performance: optimizations and speed improvements
+  - UI/UX: interface and usability improvements
+  - Security: security patches and vulnerability fixes
+- Batch processing (5 PRs per batch, configurable)
+- PR deduplication with 90-day memory
+- Time-based scheduling per repository
+- Repository monitoring (`github_monitor.go`):
+  - Automatic PR detection from last 3 days
+  - Gradual pending queue processing
+  - Multi-language summary generation
+  - Channel subscription management
+
 **Cost Management** (`internal/ratelimit/`)
+
 - Rate limiting (10 RPM, 200k TPM defaults)
 - Token counting before requests
 - Circuit breaker pattern (5 failure threshold)
@@ -84,6 +119,7 @@ go test -cover ./... # With coverage
 ```
 
 **Coverage:**
+
 - Rate limiting: 94.0%
 - AI: 56.5%
 - Storage: 60.2%
@@ -91,44 +127,66 @@ go test -cover ./... # With coverage
 
 ## Commands
 
-| Command | Description | Permission |
-|---------|-------------|------------|
-| `/setup-news #channel [feed]` | Subscribe channel to feed (defaults to godot-official) | Manage Server |
-| `/remove-news #channel [feed]` | Unsubscribe channel from feed | Manage Server |
-| `/list-channels` | List all channels and their subscriptions | Manage Server |
-| `/update-news [feed]` | Force immediate check of specific feed (defaults to godot-official) | Manage Server |
-| `/update-all-news` | Force immediate check of all feeds | Manage Server |
-| `/register-feed <id> <url> [title] [desc]` | Register new RSS feed | Manage Server |
-| `/unregister-feed <id>` | Remove RSS feed | Manage Server |
-| `/list-feeds` | Show all registered feeds with schedules | Anyone |
-| `/schedule-feed <id> <times>` | Set check times (e.g., 09:00,13:00,18:00) | Manage Server |
-| `/set-language <language>` | Set default language for server (pt-BR/en/es/fr/de/ja) | Manage Server |
-| `/set-channel-language #channel [lang]` | Override language for specific channel | Manage Server |
-| `/help` | Display all available commands with descriptions | Anyone |
+| Command                                    | Description                                                         | Permission    |
+| ------------------------------------------ | ------------------------------------------------------------------- | ------------- |
+| `/setup-news #channel [feed]`              | Subscribe channel to feed (defaults to godot-official)              | Manage Server |
+| `/remove-news #channel [feed]`             | Unsubscribe channel from feed                                       | Manage Server |
+| `/list-channels`                           | List all channels and their subscriptions                           | Manage Server |
+| `/update-news [feed]`                      | Force immediate check of specific feed (defaults to godot-official) | Manage Server |
+| `/update-all-news`                         | Force immediate check of all feeds                                  | Manage Server |
+| `/register-feed <id> <url> [title] [desc]` | Register new RSS feed                                               | Manage Server |
+| `/unregister-feed <id>`                    | Remove RSS feed                                                     | Manage Server |
+| `/list-feeds`                              | Show all registered feeds with schedules                            | Anyone        |
+| `/schedule-feed <id> <times>`              | Set check times (e.g., 09:00,13:00,18:00)                           | Manage Server |
+| `/set-language <language>`                 | Set default language for server (pt-BR/en/es/fr/de/ja)              | Manage Server |
+| `/set-channel-language #channel [lang]`    | Override language for specific channel                              | Manage Server |
+| `/help`                                    | Display all available commands with descriptions                    | Anyone        |
 
 ### GitHub Repository Monitoring
 
-| Command | Description | Permission |
-|---------|-------------|------------|
-| `/register-repo <id> <owner> <repo> [branch]` | Register GitHub repository to monitor PRs | Manage Server |
-| `/unregister-repo <id>` | Remove GitHub repository | Manage Server |
-| `/list-repos` | Show all registered repositories with stats | Manage Server |
-| `/setup-repo-channel #channel <id>` | Subscribe channel to PR summaries (use repo ID) | Manage Server |
-| `/remove-repo-channel #channel <id>` | Unsubscribe channel from PR summaries (use repo ID) | Manage Server |
-| `/schedule-repo <id> <times>` | Set check times for repository (use repo ID, e.g., 09:00,13:00,18:00) | Manage Server |
+| Command                                       | Description                                                           | Permission    |
+| --------------------------------------------- | --------------------------------------------------------------------- | ------------- |
+| `/register-repo <id> <owner> <repo> [branch]` | Register GitHub repository to monitor PRs                             | Manage Server |
+| `/unregister-repo <id>`                       | Remove GitHub repository                                              | Manage Server |
+| `/list-repos`                                 | Show all registered repositories with stats                           | Manage Server |
+| `/setup-repo-channel #channel <id>`           | Subscribe channel to PR summaries (use repo ID)                       | Manage Server |
+| `/remove-repo-channel #channel <id>`          | Unsubscribe channel from PR summaries (use repo ID)                   | Manage Server |
+| `/schedule-repo <id> <times>`                 | Set check times for repository (use repo ID, e.g., 09:00,13:00,18:00) | Manage Server |
+| `/update-repo <id>`                           | Force check specific repository and process one batch                 | Manage Server |
+| `/update-all-repos`                           | Force check all repositories and process pending batches              | Manage Server |
 
 **GitHub Features:**
+
 - Monitor merged Pull Requests from specified repositories
-- High-value filtering (by labels, changed files, min changes)
-- Auto-categorization (Features, Bugfixes, Performance, UI/UX, Security)
-- Batched AI-generated summaries with "Why it matters" explanations
-- **Multilingual support** (same 6 languages as RSS feeds: pt-BR, en, es, fr, de, ja)
+- **High-value filtering**:
+  - Whitelist labels: bug, enhancement, performance, optimization, usability, accessibility, security
+  - Minimum line changes (default: 5, configurable via `GITHUB_FILTER_MIN_CHANGES`)
+  - Automatic rejection of documentation-only or trivial changes
+  - Detailed filtering logs showing accept/reject reasons
+- **Auto-categorization engine**:
+  - Features: New capabilities and enhancements
+  - Bugfixes: Bug fixes and corrections
+  - Performance: Optimizations and speed improvements
+  - UI/UX: Interface and usability improvements
+  - Security: Security patches and vulnerability fixes
+- **Batched processing**:
+  - Processes 5 PRs per batch (configurable via `GITHUB_BATCH_THRESHOLD`)
+  - Gradual queue processing to stay within AI token limits
+  - One batch at a time, waits for next scheduled check
+  - Example: 42 pending PRs with 3 daily checks = ~3 days to clear
+- **AI-generated summaries**:
+  - "Why it matters" explanations for each PR
+  - Category-based organization
+  - Impact assessment
+  - Multilingual support (same 6 languages as RSS feeds)
+- **Multilingual support** (pt-BR, en, es, fr, de, ja)
 - **Smart grouping**: One summary per language, shared across channels
 - **Language detection**: Uses channel → guild → English hierarchy
-- Time-based scheduling per repository (same as RSS feeds)
+- Time-based scheduling per repository (HH:MM format, same as RSS feeds)
 - Many-to-many channel subscriptions
 - Deduplication with 90-day memory
-- Configurable batch threshold and check interval
+- Fetches PRs from last 3 days only (older PRs automatically ignored)
+- Pending queue persists PRs until channels are registered
 
 ## Configuration
 
@@ -146,8 +204,8 @@ REDIS_PASSWORD=
 # GitHub Integration (Optional)
 GITHUB_TOKEN=your_github_pat                     # GitHub Personal Access Token
 GITHUB_CHECK_INTERVAL_MINUTES=30                 # Fallback for repos without schedules
-GITHUB_BATCH_THRESHOLD=5                         # PRs needed to trigger summary
-GITHUB_FILTER_MIN_CHANGES=5                      # Minimum line changes for filtering
+GITHUB_BATCH_THRESHOLD=5                         # PRs needed to trigger summary (max per batch)
+GITHUB_FILTER_MIN_CHANGES=5                      # Minimum line changes to accept PR (default: 5)
 
 # Rate Limiting (Optional - Gemini Free Tier Protection)
 GEMINI_MAX_REQUESTS_PER_MINUTE=10        # Conservative: below 15 RPM limit
@@ -188,6 +246,7 @@ github:repos:{repoID}:last_checked  → Unix timestamp
 ```
 
 ### Language Detection Flow
+
 1. Check `news:channels:{channelID}:language` for channel-specific override
 2. If not set, get guild ID and check `news:guilds:{guildID}:language`
 3. If not set, default to "en" (English)
@@ -196,21 +255,25 @@ github:repos:{repoID}:last_checked  → Unix timestamp
 ## Development
 
 **TDD Workflow:**
+
 1. Write failing test
 2. Implement minimal code to pass
 3. Refactor while keeping tests green
 
 **Dependencies:**
+
 ```bash
 go mod download
 ```
 
 **Run locally:**
+
 ```bash
 go run ./cmd/bot
 ```
 
 **Docker:**
+
 ```bash
 docker-compose up --build
 ```
@@ -218,6 +281,7 @@ docker-compose up --build
 ## Features
 
 ### Core Functionality
+
 - ✅ Channel-based subscription with # parameters
 - ✅ AI-powered summaries in 6 languages (pt-BR, en, es, fr, de, ja)
 - ✅ Translated article titles alongside summaries
@@ -231,6 +295,7 @@ docker-compose up --build
 - ✅ Enhanced logging for debugging
 
 ### Cost Management & Reliability
+
 - ✅ **Token counting** - Estimates before each request
 - ✅ **Rate limiting** - 10 RPM / 200k TPM (33% safety buffer)
 - ✅ **Circuit breaker** - Opens after 5 failures, 5-min timeout
@@ -240,6 +305,7 @@ docker-compose up --build
 - ✅ **Statistics API** - Real-time usage monitoring
 
 ### Quality Assurance
+
 - ✅ 55 passing tests (94% coverage on rate limiting)
 - ✅ Thread-safe concurrent access
 - ✅ Comprehensive error handling
@@ -248,36 +314,45 @@ docker-compose up --build
 ## Cost Management System
 
 ### Overview
+
 Protects against exceeding Gemini API free tier limits with:
+
 - Token counting before requests (fallback: chars/4)
 - Request & token rate limiting per minute
 - Circuit breaker pattern for outage protection
 - Exponential backoff retry (1s → 2s → 4s → 8s)
 
 ### Gemini Free Tier Limits
+
 - **15 RPM** (Requests Per Minute)
 - **250k TPM** (Tokens Per Minute)
 
 ### Bot Defaults (Conservative)
+
 - **10 RPM** (33% buffer below limit)
 - **200k TPM** (20% buffer below limit)
 - **4k tokens per request** (reasonable article + summary)
 
 ### Error Handling
+
 **Retryable errors:**
+
 - 429 (rate limit)
 - 503 (service unavailable)
 - Timeout/deadline exceeded
 - Connection errors
 
 **Non-retryable errors:**
+
 - 400 (bad request)
 - 401 (unauthorized)
 - 403 (forbidden)
 - 404 (not found)
 
 ### Monitoring
+
 Logs include:
+
 ```
 Rate Limiting: 10 RPM, 200000 TPM, Circuit Breaker: 5 failures
 Token estimate: input=1234, estimated_output=1500, total=2734
@@ -285,6 +360,7 @@ Request successful, recorded 2850 tokens
 ```
 
 Access statistics programmatically:
+
 ```go
 stats := summarizer.GetRateLimitStatistics()
 // stats.CurrentWindowRequests, stats.CurrentWindowTokens
@@ -293,6 +369,7 @@ stats := summarizer.GetRateLimitStatistics()
 ```
 
 ### Benefits
+
 - **Cost protection** - Never exceed free tier
 - **Reliability** - Automatic retries and circuit breaker
 - **Transparency** - Detailed logging and statistics

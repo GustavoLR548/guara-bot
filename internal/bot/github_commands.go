@@ -51,6 +51,29 @@ func (h *CommandHandler) handleRegisterRepo(s *discordgo.Session, i *discordgo.I
 		return
 	}
 
+	// Validate repository ID format
+	if err := isValidRepoID(repoID); err != nil {
+		h.followUpError(s, i, fmt.Sprintf("❌ Invalid repository ID: %s", err.Error()))
+		return
+	}
+
+	// Validate owner/repo names
+	if err := isValidGitHubName(owner); err != nil {
+		h.followUpError(s, i, fmt.Sprintf("❌ Invalid owner name: %s", err.Error()))
+		return
+	}
+
+	if err := isValidGitHubName(repoName); err != nil {
+		h.followUpError(s, i, fmt.Sprintf("❌ Invalid repository name: %s", err.Error()))
+		return
+	}
+
+	// Validate branch name (basic check)
+	if len(branch) > 255 {
+		h.followUpError(s, i, "❌ Branch name too long (max 255 characters)")
+		return
+	}
+
 	// Check if repository already exists
 	exists, err := h.githubRepo.HasRepository(repoID)
 	if err != nil {
@@ -123,13 +146,40 @@ func (h *CommandHandler) handleUnregisterRepo(s *discordgo.Session, i *discordgo
 		return
 	}
 
+	// Get subscribed channels before unregistering (for cleanup and user feedback)
+	channels, err := h.githubRepo.GetRepoChannels(repoID)
+	if err != nil {
+		log.Printf("[UNREGISTER-REPO] Error getting repo channels: %v", err)
+	}
+
 	// Unregister repository
 	if err := h.githubRepo.UnregisterRepository(repoID); err != nil {
 		h.followUpError(s, i, fmt.Sprintf("❌ Failed to unregister repository: %v", err))
 		return
 	}
 
-	h.followUpSuccess(s, i, fmt.Sprintf("✅ Repository `%s` has been unregistered.", repoID))
+	// Cleanup: Remove channel associations and orphaned data
+	if len(channels) > 0 {
+		log.Printf("[UNREGISTER-REPO] Cleaning up %d channel associations for repo %s", len(channels), repoID)
+		for _, channelID := range channels {
+			if err := h.githubRepo.RemoveRepoChannel(repoID, channelID); err != nil {
+				log.Printf("[UNREGISTER-REPO] Error removing repo %s from channel %s: %v", repoID, channelID, err)
+			}
+		}
+	}
+
+	// Clear pending PRs
+	if err := h.githubRepo.ClearPendingQueue(repoID); err != nil {
+		log.Printf("[UNREGISTER-REPO] Error clearing pending PRs for repo %s: %v", repoID, err)
+	}
+
+	// Success message with warning if channels were affected
+	message := fmt.Sprintf("✅ Repository `%s` has been unregistered.", repoID)
+	if len(channels) > 0 {
+		message += fmt.Sprintf("\n\n⚠️ Note: %d channel(s) were subscribed to this repository and have been unsubscribed.", len(channels))
+	}
+
+	h.followUpSuccess(s, i, message)
 }
 
 // handleListRepos handles the /list-repos command
@@ -199,7 +249,25 @@ func (h *CommandHandler) handleSetupRepoChannel(s *discordgo.Session, i *discord
 		return
 	}
 
-	channelID := options[0].ChannelValue(s).ID
+	channelValue := options[0].ChannelValue(s)
+	if channelValue == nil {
+		h.followUpError(s, i, "❌ Invalid channel.")
+		return
+	}
+
+	// Verify channel is in the same guild
+	if channelValue.GuildID != i.GuildID {
+		h.followUpError(s, i, "❌ Channel must be in this server.")
+		return
+	}
+
+	// Verify it's a text channel
+	if channelValue.Type != discordgo.ChannelTypeGuildText {
+		h.followUpError(s, i, "❌ Please select a text channel.")
+		return
+	}
+
+	channelID := channelValue.ID
 	repoID := options[1].StringValue()
 
 	// Check if repository exists
@@ -328,6 +396,12 @@ func (h *CommandHandler) handleScheduleRepo(s *discordgo.Session, i *discordgo.I
 		}
 	}
 
+	// Validate schedule times
+	if err := validateScheduleTimes(times); err != nil {
+		h.followUpError(s, i, fmt.Sprintf("❌ %s", err.Error()))
+		return
+	}
+
 	// Set schedule
 	if err := h.githubRepo.SetSchedule(repoID, times); err != nil {
 		h.followUpError(s, i, fmt.Sprintf("❌ Failed to set schedule: %v", err))
@@ -355,6 +429,12 @@ func (h *CommandHandler) handleUpdateRepo(s *discordgo.Session, i *discordgo.Int
 	// Check permissions first
 	if !h.hasManageServerPermission(i.Member) {
 		h.respondError(s, i, "❌ You need the **Manage Server** permission to use this command.")
+		return
+	}
+
+	// Check rate limit
+	if limited, remaining := updateRepoRateLimiter.Check(i.Member.User.ID); limited {
+		h.respondError(s, i, fmt.Sprintf("⏳ Please wait %d seconds before triggering another update.", int(remaining.Seconds())))
 		return
 	}
 
@@ -404,6 +484,8 @@ func (h *CommandHandler) handleUpdateRepo(s *discordgo.Session, i *discordgo.Int
 	}
 
 	// Trigger immediate check for specific repository
+	updateRepoRateLimiter.Record(i.Member.User.ID) // Record the command use
+	
 	go func() {
 		h.githubMonitor.CheckRepositoryNow(repoID)
 
@@ -428,6 +510,12 @@ func (h *CommandHandler) handleUpdateAllRepos(s *discordgo.Session, i *discordgo
 	// Check permissions first
 	if !h.hasManageServerPermission(i.Member) {
 		h.respondError(s, i, "❌ You need the **Manage Server** permission to use this command.")
+		return
+	}
+
+	// Check rate limit
+	if limited, remaining := updateRepoRateLimiter.Check(i.Member.User.ID); limited {
+		h.respondError(s, i, fmt.Sprintf("⏳ Please wait %d seconds before triggering another update.", int(remaining.Seconds())))
 		return
 	}
 
@@ -463,6 +551,8 @@ func (h *CommandHandler) handleUpdateAllRepos(s *discordgo.Session, i *discordgo
 	}
 
 	// Trigger immediate check for all repositories
+	updateRepoRateLimiter.Record(i.Member.User.ID) // Record the command use
+	
 	go func() {
 		h.githubMonitor.CheckAllRepositoriesNow()
 
