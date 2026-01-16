@@ -38,8 +38,8 @@ go run ./cmd/bot
 ### Channel Management
 
 ```bash
-/setup-news #channel [feed]     # Subscribe channel to feed (defaults to godot-official)
-/remove-news #channel [feed]    # Unsubscribe channel from feed
+/setup-feed-channel #channel [feed]     # Subscribe channel to feed (defaults to godot-official)
+/remove-feed-channel #channel [feed]    # Unsubscribe channel from feed
 /list-channels                  # List all channels and subscriptions
 /update-news [feed]             # Force check specific RSS feed (defaults to godot-official)
 /update-all-news                # Force check all RSS feeds immediately
@@ -163,9 +163,9 @@ go run ./cmd/bot
 /register-feed hackernews https://hnrss.org/frontpage "Hacker News" "Tech community"
 
 # Subscribe channels to different feeds
-/setup-news #game-dev godot
-/setup-news #tech-news techcrunch
-/setup-news #tech-news hackernews
+/setup-feed-channel #game-dev godot
+/setup-feed-channel #tech-news techcrunch
+/setup-feed-channel #tech-news hackernews
 
 # Set schedule for a feed (check at 9 AM, 1 PM, and 6 PM)
 /schedule-feed godot 09:00,13:00,18:00

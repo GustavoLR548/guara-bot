@@ -129,8 +129,8 @@ go test -cover ./... # With coverage
 
 | Command                                    | Description                                                         | Permission    |
 | ------------------------------------------ | ------------------------------------------------------------------- | ------------- |
-| `/setup-news #channel [feed]`              | Subscribe channel to feed (defaults to godot-official)              | Manage Server |
-| `/remove-news #channel [feed]`             | Unsubscribe channel from feed                                       | Manage Server |
+| `/setup-feed-channel #channel [feed]`              | Subscribe channel to feed (defaults to godot-official)              | Manage Server |
+| `/remove-feed-channel #channel [feed]`             | Unsubscribe channel from feed                                       | Manage Server |
 | `/list-channels`                           | List all channels and their subscriptions                           | Manage Server |
 | `/update-news [feed]`                      | Force immediate check of specific feed (defaults to godot-official) | Manage Server |
 | `/update-all-news`                         | Force immediate check of all feeds                                  | Manage Server |

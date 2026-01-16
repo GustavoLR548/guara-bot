@@ -105,17 +105,17 @@ For more information, please check out [here](QUICKSTART.md)
 
 ```bash
 # Subscribe channels to specific feeds
-/setup-news #game-news godot
-/setup-news #tutorials gdquest
-/setup-news #tech-news techcrunch
+/setup-feed-channel #game-news godot
+/setup-feed-channel #tutorials gdquest
+/setup-feed-channel #tech-news techcrunch
 
 # A single channel can subscribe to multiple feeds
-/setup-news #general godot
-/setup-news #general techcrunch
-/setup-news #general dev-to
+/setup-feed-channel #general godot
+/setup-feed-channel #general techcrunch
+/setup-feed-channel #general dev-to
 
 # Unsubscribe from a feed
-/remove-news #tutorials gdquest
+/remove-feed-channel #tutorials gdquest
 
 # Force immediate check of a specific feed
 /update-news godot

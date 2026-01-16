@@ -47,7 +47,7 @@ func (h *CommandHandler) SetGitHubMonitor(monitor *GitHubMonitor) {
 func (h *CommandHandler) RegisterCommands(s *discordgo.Session) error {
 	commands := []*discordgo.ApplicationCommand{
 		{
-			Name:        "setup-news",
+			Name:        "setup-feed-channel",
 			Description: "Configure a channel to receive news from a specific feed",
 			Options: []*discordgo.ApplicationCommandOption{
 				{
@@ -68,7 +68,7 @@ func (h *CommandHandler) RegisterCommands(s *discordgo.Session) error {
 			},
 		},
 		{
-			Name:        "remove-news",
+			Name:        "remove-feed-channel",
 			Description: "Remove a channel from receiving news from a specific feed",
 			Options: []*discordgo.ApplicationCommandOption{
 				{
@@ -366,9 +366,9 @@ func (h *CommandHandler) HandleCommands(s *discordgo.Session) {
 	s.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		switch i.ApplicationCommandData().Name {
 		// RSS Feed Commands (rss_commands.go)
-		case "setup-news":
+		case "setup-feed-channel":
 			h.handleSetupNews(s, i)
-		case "remove-news":
+		case "remove-feed-channel":
 			h.handleRemoveNews(s, i)
 		case "update-news":
 			h.handleUpdateNews(s, i)
@@ -420,8 +420,8 @@ func (h *CommandHandler) HandleCommands(s *discordgo.Session) {
 func (h *CommandHandler) handleHelp(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	helpMessage := "🤖 **Bot Commands Help**\n\n" +
 		"**RSS Feed Commands:**\n" +
-		"• `/setup-news <feed-url> <channel>` - Register a channel for RSS feed updates\n" +
-		"• `/remove-news <channel>` - Unregister a channel from RSS feed updates\n" +
+		"• `/setup-feed-channel <channel> [feed]` - Subscribe a channel to RSS feed updates\n" +
+		"• `/remove-feed-channel <channel> [feed]` - Unsubscribe a channel from RSS feed updates\n" +
 		"• `/register-feed <feed-url>` - Register a new RSS feed\n" +
 		"• `/unregister-feed <feed-url>` - Unregister an existing RSS feed\n" +
 		"• `/list-feeds` - List all registered RSS feeds\n" +

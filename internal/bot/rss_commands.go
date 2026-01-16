@@ -12,11 +12,11 @@ import (
 // RSS Feed Management Commands
 // This file contains all RSS feed command handlers
 func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	log.Printf("[SETUP-NEWS] Command triggered by user %s in guild %s", i.Member.User.ID, i.GuildID)
+	log.Printf("[SETUP-FEED-CHANNEL] Command triggered by user %s in guild %s", i.Member.User.ID, i.GuildID)
 	
 	// Check if command was used in a guild (server)
 	if i.GuildID == "" {
-		log.Printf("[SETUP-NEWS] ERROR: Command used outside guild")
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Command used outside guild")
 		h.respondError(s, i, "This command can only be used in a server.")
 		return
 	}
@@ -24,23 +24,23 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	// Get the member who executed the command
 	member := i.Member
 	if member == nil {
-		log.Printf("[SETUP-NEWS] ERROR: Could not get member")
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Could not get member")
 		h.respondError(s, i, "Could not verify your permissions.")
 		return
 	}
 
 	// Check if user has "Manage Server" permission
 	if !h.hasManageServerPermission(member) {
-		log.Printf("[SETUP-NEWS] ERROR: User %s lacks Manage Server permission", member.User.ID)
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: User %s lacks Manage Server permission", member.User.ID)
 		h.respondError(s, i, "❌ You need the **Manage Server** permission to use this command.")
 		return
 	}
 
 	// Get the channel parameter
 	options := i.ApplicationCommandData().Options
-	log.Printf("[SETUP-NEWS] Received %d options", len(options))
+	log.Printf("[SETUP-FEED-CHANNEL] Received %d options", len(options))
 	if len(options) == 0 {
-		log.Printf("[SETUP-NEWS] ERROR: No channel option provided")
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: No channel option provided")
 		h.respondError(s, i, "❌ You need to specify a channel.")
 		return
 	}
@@ -48,13 +48,13 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	// Extract channel ID from the option
 	channelValue := options[0].ChannelValue(s)
 	if channelValue == nil {
-		log.Printf("[SETUP-NEWS] ERROR: Failed to get channel value")
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to get channel value")
 		h.respondError(s, i, "❌ Invalid channel.")
 		return
 	}
 	
 	channelID := channelValue.ID
-	log.Printf("[SETUP-NEWS] Channel selected: %s (ID: %s, Type: %d)", channelValue.Name, channelID, channelValue.Type)
+	log.Printf("[SETUP-FEED-CHANNEL] Channel selected: %s (ID: %s, Type: %d)", channelValue.Name, channelID, channelValue.Type)
 
 	// Verify channel is in the same guild
 	if channelValue.GuildID != i.GuildID {
@@ -66,9 +66,9 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	feedID := "godot-official"
 	if len(options) > 1 {
 		feedID = options[1].StringValue()
-		log.Printf("[SETUP-NEWS] Custom feed ID provided: %s", feedID)
+		log.Printf("[SETUP-FEED-CHANNEL] Custom feed ID provided: %s", feedID)
 	} else {
-		log.Printf("[SETUP-NEWS] Using default feed ID: %s", feedID)
+		log.Printf("[SETUP-FEED-CHANNEL] Using default feed ID: %s", feedID)
 	}
 
 	// Respond immediately to avoid timeout
@@ -79,15 +79,15 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 		},
 	})
 	if err != nil {
-		log.Printf("[SETUP-NEWS] ERROR: Failed to send initial response: %v", err)
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to send initial response: %v", err)
 		return
 	}
 
 	// Now do the work
-	log.Printf("[SETUP-NEWS] Checking if feed exists: %s", feedID)
+	log.Printf("[SETUP-FEED-CHANNEL] Checking if feed exists: %s", feedID)
 	hasFeed, err := h.feedRepo.HasFeed(feedID)
 	if err != nil {
-		log.Printf("[SETUP-NEWS] ERROR: Failed to check feed existence: %v", err)
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to check feed existence: %v", err)
 		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "❌ Error checking feed.",
 			Flags:   discordgo.MessageFlagsEphemeral,
@@ -95,18 +95,18 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 		return
 	}
 	if !hasFeed {
-		log.Printf("[SETUP-NEWS] ERROR: Feed not found: %s", feedID)
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Feed not found: %s", feedID)
 		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: fmt.Sprintf("❌ Feed '%s' not found. Use `/list-feeds` to see available feeds.", feedID),
 			Flags:   discordgo.MessageFlagsEphemeral,
 		})
 		return
 	}
-	log.Printf("[SETUP-NEWS] Feed exists: %s", feedID)
+	log.Printf("[SETUP-FEED-CHANNEL] Feed exists: %s", feedID)
 
 	// Verify it's a text channel
 	if channelValue.Type != discordgo.ChannelTypeGuildText {
-		log.Printf("[SETUP-NEWS] ERROR: Invalid channel type: %d (expected %d)", channelValue.Type, discordgo.ChannelTypeGuildText)
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Invalid channel type: %d (expected %d)", channelValue.Type, discordgo.ChannelTypeGuildText)
 		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "❌ Only text channels can receive news.",
 			Flags:   discordgo.MessageFlagsEphemeral,
@@ -115,21 +115,21 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	}
 
 	// Check if channel is already subscribed to this feed
-	log.Printf("[SETUP-NEWS] Checking if channel %s is already subscribed to feed %s", channelID, feedID)
+	log.Printf("[SETUP-FEED-CHANNEL] Checking if channel %s is already subscribed to feed %s", channelID, feedID)
 	feeds, err := h.channelRepo.GetChannelFeeds(channelID)
 	if err != nil {
-		log.Printf("[SETUP-NEWS] ERROR: Failed to get channel feeds: %v", err)
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to get channel feeds: %v", err)
 		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "❌ Error checking channel.",
 			Flags:   discordgo.MessageFlagsEphemeral,
 		})
 		return
 	}
-	log.Printf("[SETUP-NEWS] Channel %s has %d feeds: %v", channelID, len(feeds), feeds)
+	log.Printf("[SETUP-FEED-CHANNEL] Channel %s has %d feeds: %v", channelID, len(feeds), feeds)
 
 	for _, f := range feeds {
 		if f == feedID {
-			log.Printf("[SETUP-NEWS] ERROR: Channel %s already subscribed to feed %s", channelID, feedID)
+			log.Printf("[SETUP-FEED-CHANNEL] ERROR: Channel %s already subscribed to feed %s", channelID, feedID)
 			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 				Content: fmt.Sprintf("⚠️ This channel is already subscribed to feed '%s'.", feedID),
 				Flags:   discordgo.MessageFlagsEphemeral,
@@ -139,21 +139,21 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	}
 
 	// Check if limit would be exceeded (count unique channels)
-	log.Printf("[SETUP-NEWS] Checking channel count")
+	log.Printf("[SETUP-FEED-CHANNEL] Checking channel count")
 	count, err := h.channelRepo.GetChannelCount()
 	if err != nil {
-		log.Printf("[SETUP-NEWS] ERROR: Failed to get channel count: %v", err)
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to get channel count: %v", err)
 		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "❌ Error checking channel limit.",
 			Flags:   discordgo.MessageFlagsEphemeral,
 		})
 		return
 	}
-	log.Printf("[SETUP-NEWS] Current channel count: %d, Max: %d, New channel: %v", count, h.maxLimit, len(feeds) == 0)
+	log.Printf("[SETUP-FEED-CHANNEL] Current channel count: %d, Max: %d, New channel: %v", count, h.maxLimit, len(feeds) == 0)
 
 	if count >= h.maxLimit && len(feeds) == 0 {
 		// Only enforce limit for new channels, not for adding feeds to existing channels
-		log.Printf("[SETUP-NEWS] ERROR: Channel limit reached (%d/%d)", count, h.maxLimit)
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Channel limit reached (%d/%d)", count, h.maxLimit)
 		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: fmt.Sprintf("❌ Channel limit reached (%d/%d). Cannot add more channels.", count, h.maxLimit),
 			Flags:   discordgo.MessageFlagsEphemeral,
@@ -162,21 +162,21 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	}
 
 	// Add the channel-feed association
-	log.Printf("[SETUP-NEWS] Adding channel %s for feed %s", channelID, feedID)
+	log.Printf("[SETUP-FEED-CHANNEL] Adding channel %s for feed %s", channelID, feedID)
 	if err := h.channelRepo.AddChannel(channelID, feedID); err != nil {
-		log.Printf("[SETUP-NEWS] ERROR: Failed to add channel: %v", err)
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to add channel: %v", err)
 		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "❌ Error registering channel.",
 			Flags:   discordgo.MessageFlagsEphemeral,
 		})
 		return
 	}
-	log.Printf("[SETUP-NEWS] SUCCESS: Channel added")
+	log.Printf("[SETUP-FEED-CHANNEL] SUCCESS: Channel added")
 
 	// Get feed info for response
 	feed, err := h.feedRepo.GetFeed(feedID)
 	if err != nil {
-		log.Printf("[SETUP-NEWS] Warning: Failed to get feed details: %v", err)
+		log.Printf("[SETUP-FEED-CHANNEL] Warning: Failed to get feed details: %v", err)
 		// Continue anyway, feed exists
 		feed = &storage.RSSFeed{ID: feedID, Title: feedID}
 	}
@@ -187,7 +187,7 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 		Flags:   discordgo.MessageFlagsEphemeral,
 	})
 
-	log.Printf("[SETUP-NEWS] SUCCESS: Channel %s subscribed to feed %s in guild %s", channelID, feedID, i.GuildID)
+	log.Printf("[SETUP-FEED-CHANNEL] SUCCESS: Channel %s subscribed to feed %s in guild %s", channelID, feedID, i.GuildID)
 }
 
 // handleRemoveNews handles the /remove-news command
@@ -370,7 +370,7 @@ func (h *CommandHandler) handleListChannels(s *discordgo.Session, i *discordgo.I
 		response += "\n"
 	}
 
-	response += "💡 Use `/remove-news` for RSS or `/remove-repo-channel` for GitHub subscriptions."
+	response += "💡 Use `/remove-feed-channel` for RSS or `/remove-repo-channel` for GitHub subscriptions."
 
 	h.respondSuccess(s, i, response)
 
