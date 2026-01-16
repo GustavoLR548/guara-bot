@@ -18,8 +18,8 @@ type Bot struct {
 	newsFetcher   news.NewsFetcher
 	aiSummarizer  ai.AISummarizer
 	channelRepo   storage.ChannelRepository
-	historyRepo   storage.HistoryRepository
-	feedRepo      storage.FeedRepository
+	historyRepo   storage.RSSHistoryRepository
+	feedRepo      storage.RSSFeedRepository
 	checkInterval time.Duration
 	stopChan      chan bool
 }
@@ -30,8 +30,8 @@ func NewBot(
 	newsFetcher news.NewsFetcher,
 	aiSummarizer ai.AISummarizer,
 	channelRepo storage.ChannelRepository,
-	historyRepo storage.HistoryRepository,
-	feedRepo storage.FeedRepository,
+	historyRepo storage.RSSHistoryRepository,
+	feedRepo storage.RSSFeedRepository,
 	checkInterval time.Duration,
 ) *Bot {
 	return &Bot{
@@ -143,7 +143,7 @@ func (b *Bot) checkAndPostNews() {
 }
 
 // processFeed processes a single feed - checks for new articles and posts them
-func (b *Bot) processFeed(feed *storage.Feed) {
+func (b *Bot) processFeed(feed *storage.RSSFeed) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -216,7 +216,7 @@ func (b *Bot) processFeed(feed *storage.Feed) {
 }
 
 // processPendingArticle fetches and posts a pending article by GUID
-func (b *Bot) processPendingArticle(ctx context.Context, feed *storage.Feed, guid string, channels []string) error {
+func (b *Bot) processPendingArticle(ctx context.Context, feed *storage.RSSFeed, guid string, channels []string) error {
 	// Create fetcher for this feed
 	feedFetcher := news.NewRSSFetcher(feed.URL)
 	
@@ -245,7 +245,7 @@ func (b *Bot) processPendingArticle(ctx context.Context, feed *storage.Feed, gui
 }
 
 // processAndPostArticle scrapes, summarizes, and posts an article with multilingual support
-func (b *Bot) processAndPostArticle(ctx context.Context, feed *storage.Feed, fetcher news.NewsFetcher, article *news.Article, channels []string) error {
+func (b *Bot) processAndPostArticle(ctx context.Context, feed *storage.RSSFeed, fetcher news.NewsFetcher, article *news.Article, channels []string) error {
 	log.Printf("Generating summaries for %d channel(s) subscribed to feed %s...", len(channels), feed.ID)
 
 	// Scrape article content
@@ -366,7 +366,7 @@ func getLanguageList(channelsByLanguage map[string][]string) []string {
 }
 
 // createNewsEmbed creates a Discord embed for the news article with feed info
-func (b *Bot) createNewsEmbed(feed *storage.Feed, article *news.Article, response *ai.SummaryResponse, language string) *discordgo.MessageEmbed {
+func (b *Bot) createNewsEmbed(feed *storage.RSSFeed, article *news.Article, response *ai.SummaryResponse, language string) *discordgo.MessageEmbed {
 	// Translations for "Read full article" link
 	readFullArticle := map[string]string{
 		"pt-BR": "Ler artigo completo",

@@ -16,7 +16,7 @@ import (
 //   - command_utils.go: Shared utility functions
 type CommandHandler struct {
 	channelRepo   storage.ChannelRepository
-	feedRepo      storage.FeedRepository
+	feedRepo      storage.RSSFeedRepository
 	githubRepo    storage.GitHubRepository
 	maxLimit      int
 	bot           *Bot           // Reference to bot for triggering updates
@@ -24,7 +24,7 @@ type CommandHandler struct {
 }
 
 // NewCommandHandler creates a new command handler
-func NewCommandHandler(channelRepo storage.ChannelRepository, feedRepo storage.FeedRepository, githubRepo storage.GitHubRepository, maxLimit int) *CommandHandler {
+func NewCommandHandler(channelRepo storage.ChannelRepository, feedRepo storage.RSSFeedRepository, githubRepo storage.GitHubRepository, maxLimit int) *CommandHandler {
 	return &CommandHandler{
 		channelRepo: channelRepo,
 		feedRepo:    feedRepo,

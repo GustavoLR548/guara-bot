@@ -178,7 +178,7 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	if err != nil {
 		log.Printf("[SETUP-NEWS] Warning: Failed to get feed details: %v", err)
 		// Continue anyway, feed exists
-		feed = &storage.Feed{ID: feedID, Title: feedID}
+		feed = &storage.RSSFeed{ID: feedID, Title: feedID}
 	}
 
 	// Send success message
@@ -658,7 +658,7 @@ func (h *CommandHandler) handleRegisterFeed(s *discordgo.Session, i *discordgo.I
 	}
 
 	// Register feed
-	feed := storage.Feed{
+	feed := storage.RSSFeed{
 		ID:          feedID,
 		URL:         feedURL,
 		Title:       title,

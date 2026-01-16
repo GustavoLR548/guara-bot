@@ -96,12 +96,12 @@ func main() {
 		log.Fatalf("Failed to create channel repository: %v", err)
 	}
 
-	historyRepo := storage.NewRedisHistoryRepository(redisClient)
-	feedRepo := storage.NewRedisFeedRepository(redisClient)
+	historyRepo := storage.NewRedisRSSHistoryRepository(redisClient)
+	feedRepo := storage.NewRedisRSSFeedRepository(redisClient)
 	githubRepo := storage.NewRedisGitHubRepository(redisClient)
 
 	// Register default feed for backward compatibility
-	defaultFeed := storage.Feed{
+	defaultFeed := storage.RSSFeed{
 		ID:          "godot-official",
 		URL:         rssURL,
 		Title:       "Godot Engine Official",

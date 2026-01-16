@@ -45,8 +45,8 @@ type ChannelRepository interface {
 	SetGuildLanguage(guildID, languageCode string) error
 	GetGuildLanguage(guildID string) (string, error)}
 
-// Feed represents an RSS feed configuration
-type Feed struct {
+// RSSFeed represents an RSS feed configuration
+type RSSFeed struct {
 	ID          string
 	URL         string
 	Title       string
@@ -55,16 +55,16 @@ type Feed struct {
 	Schedule    []string // Array of times in "HH:MM" format
 }
 
-// FeedRepository defines the interface for managing RSS feeds
-type FeedRepository interface {
+// RSSFeedRepository defines the interface for managing RSS feeds
+type RSSFeedRepository interface {
 	// RegisterFeed adds a new feed with the given identifier and URL
-	RegisterFeed(feed Feed) error
+	RegisterFeed(feed RSSFeed) error
 	// UnregisterFeed removes a feed by identifier
 	UnregisterFeed(feedID string) error
 	// GetFeed returns feed details by identifier
-	GetFeed(feedID string) (*Feed, error)
+	GetFeed(feedID string) (*RSSFeed, error)
 	// GetAllFeeds returns all registered feeds
-	GetAllFeeds() ([]Feed, error)
+	GetAllFeeds() ([]RSSFeed, error)
 	// HasFeed checks if a feed exists
 	HasFeed(feedID string) (bool, error)
 	// SetSchedule sets check times for a feed (e.g., ["09:00", "13:00", "18:00"])
@@ -73,8 +73,8 @@ type FeedRepository interface {
 	GetSchedule(feedID string) ([]string, error)
 }
 
-// HistoryRepository defines the interface for tracking posted articles per feed
-type HistoryRepository interface {
+// RSSHistoryRepository defines the interface for tracking posted articles per feed
+type RSSHistoryRepository interface {
 	// GetLastGUID returns the last posted article GUID for a specific feed
 	GetLastGUID(feedID string) (string, error)
 	// SaveGUID saves a new article GUID for a specific feed
@@ -341,20 +341,20 @@ func (r *RedisChannelRepository) GetGuildLanguage(guildID string) (string, error
 	return result, nil
 }
 
-// RedisHistoryRepository implements HistoryRepository using Redis
-type RedisHistoryRepository struct {
+// RedisRSSHistoryRepository implements RSSHistoryRepository using Redis
+type RedisRSSHistoryRepository struct {
 	client *redis.Client
 }
 
-// NewRedisHistoryRepository creates a new Redis-based history repository
-func NewRedisHistoryRepository(client *redis.Client) *RedisHistoryRepository {
-	return &RedisHistoryRepository{
+// NewRedisRSSHistoryRepository creates a new Redis-based RSS history repository
+func NewRedisRSSHistoryRepository(client *redis.Client) *RedisRSSHistoryRepository {
+	return &RedisRSSHistoryRepository{
 		client: client,
 	}
 }
 
 // GetLastGUID returns the last posted article GUID for a specific feed
-func (r *RedisHistoryRepository) GetLastGUID(feedID string) (string, error) {
+func (r *RedisRSSHistoryRepository) GetLastGUID(feedID string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -371,7 +371,7 @@ func (r *RedisHistoryRepository) GetLastGUID(feedID string) (string, error) {
 }
 
 // SaveGUID saves a new article GUID for a specific feed
-func (r *RedisHistoryRepository) SaveGUID(feedID, guid string) error {
+func (r *RedisRSSHistoryRepository) SaveGUID(feedID, guid string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -394,7 +394,7 @@ func (r *RedisHistoryRepository) SaveGUID(feedID, guid string) error {
 }
 
 // HasGUID checks if a GUID was already posted for a specific feed
-func (r *RedisHistoryRepository) HasGUID(feedID, guid string) (bool, error) {
+func (r *RedisRSSHistoryRepository) HasGUID(feedID, guid string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -408,7 +408,7 @@ func (r *RedisHistoryRepository) HasGUID(feedID, guid string) (bool, error) {
 }
 
 // AddToPending adds a GUID to the pending queue for a specific feed (FIFO, max 5 items)
-func (r *RedisHistoryRepository) AddToPending(feedID, guid string) error {
+func (r *RedisRSSHistoryRepository) AddToPending(feedID, guid string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -428,7 +428,7 @@ func (r *RedisHistoryRepository) AddToPending(feedID, guid string) error {
 }
 
 // GetPending returns all pending GUIDs for a specific feed (oldest to newest for processing)
-func (r *RedisHistoryRepository) GetPending(feedID string) ([]string, error) {
+func (r *RedisRSSHistoryRepository) GetPending(feedID string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -449,7 +449,7 @@ func (r *RedisHistoryRepository) GetPending(feedID string) ([]string, error) {
 }
 
 // RemoveFromPending removes a GUID from the pending queue for a specific feed
-func (r *RedisHistoryRepository) RemoveFromPending(feedID, guid string) error {
+func (r *RedisRSSHistoryRepository) RemoveFromPending(feedID, guid string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -464,7 +464,7 @@ func (r *RedisHistoryRepository) RemoveFromPending(feedID, guid string) error {
 }
 
 // IsPending checks if a GUID is in the pending queue for a specific feed
-func (r *RedisHistoryRepository) IsPending(feedID, guid string) (bool, error) {
+func (r *RedisRSSHistoryRepository) IsPending(feedID, guid string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -484,20 +484,20 @@ func (r *RedisHistoryRepository) IsPending(feedID, guid string) (bool, error) {
 	return false, nil
 }
 
-// RedisFeedRepository implements FeedRepository using Redis
-type RedisFeedRepository struct {
+// RedisRSSFeedRepository implements RSSFeedRepository using Redis
+type RedisRSSFeedRepository struct {
 	client *redis.Client
 }
 
-// NewRedisFeedRepository creates a new Redis-based feed repository
-func NewRedisFeedRepository(client *redis.Client) *RedisFeedRepository {
-	return &RedisFeedRepository{
+// NewRedisRSSFeedRepository creates a new Redis-based RSS feed repository
+func NewRedisRSSFeedRepository(client *redis.Client) *RedisRSSFeedRepository {
+	return &RedisRSSFeedRepository{
 		client: client,
 	}
 }
 
 // RegisterFeed adds a new feed with the given identifier and URL
-func (r *RedisFeedRepository) RegisterFeed(feed Feed) error {
+func (r *RedisRSSFeedRepository) RegisterFeed(feed RSSFeed) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -544,7 +544,7 @@ func (r *RedisFeedRepository) RegisterFeed(feed Feed) error {
 }
 
 // UnregisterFeed removes a feed by identifier
-func (r *RedisFeedRepository) UnregisterFeed(feedID string) error {
+func (r *RedisRSSFeedRepository) UnregisterFeed(feedID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -573,7 +573,7 @@ func (r *RedisFeedRepository) UnregisterFeed(feedID string) error {
 }
 
 // GetFeed returns feed details by identifier
-func (r *RedisFeedRepository) GetFeed(feedID string) (*Feed, error) {
+func (r *RedisRSSFeedRepository) GetFeed(feedID string) (*RSSFeed, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -601,7 +601,7 @@ func (r *RedisFeedRepository) GetFeed(feedID string) (*Feed, error) {
 		schedule = []string{} // Default to empty if not set
 	}
 
-	feed := &Feed{
+	feed := &RSSFeed{
 		ID:          feedData["id"],
 		URL:         feedData["url"],
 		Title:       feedData["title"],
@@ -614,7 +614,7 @@ func (r *RedisFeedRepository) GetFeed(feedID string) (*Feed, error) {
 }
 
 // GetAllFeeds returns all registered feeds
-func (r *RedisFeedRepository) GetAllFeeds() ([]Feed, error) {
+func (r *RedisRSSFeedRepository) GetAllFeeds() ([]RSSFeed, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -644,7 +644,7 @@ func (r *RedisFeedRepository) GetAllFeeds() ([]Feed, error) {
 	}
 
 	// Get each feed
-	var feeds []Feed
+	var feeds []RSSFeed
 	for _, key := range feedKeys {
 		// Extract feed ID from key
 		feedID := key[len(feedsPrefix):]
@@ -660,7 +660,7 @@ func (r *RedisFeedRepository) GetAllFeeds() ([]Feed, error) {
 }
 
 // HasFeed checks if a feed exists
-func (r *RedisFeedRepository) HasFeed(feedID string) (bool, error) {
+func (r *RedisRSSFeedRepository) HasFeed(feedID string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -679,7 +679,7 @@ func (r *RedisFeedRepository) HasFeed(feedID string) (bool, error) {
 }
 
 // SetSchedule sets check times for a feed
-func (r *RedisFeedRepository) SetSchedule(feedID string, times []string) error {
+func (r *RedisRSSFeedRepository) SetSchedule(feedID string, times []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
@@ -714,7 +714,7 @@ func (r *RedisFeedRepository) SetSchedule(feedID string, times []string) error {
 }
 
 // GetSchedule returns scheduled check times for a feed
-func (r *RedisFeedRepository) GetSchedule(feedID string) ([]string, error) {
+func (r *RedisRSSFeedRepository) GetSchedule(feedID string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 

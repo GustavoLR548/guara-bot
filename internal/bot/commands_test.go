@@ -206,26 +206,26 @@ func (m *MockChannelRepository) GetGuildLanguage(guildID string) (string, error)
 	return "en", nil
 }
 
-// MockFeedRepository is a mock for feed testing
-type MockFeedRepository struct {
-	feeds map[string]storage.Feed
+// MockRSSFeedRepository is a mock for feed testing
+type MockRSSFeedRepository struct {
+	feeds map[string]storage.RSSFeed
 }
 
-func NewMockFeedRepository() *MockFeedRepository {
-	return &MockFeedRepository{
-		feeds: make(map[string]storage.Feed),
+func NewMockRSSFeedRepository() *MockRSSFeedRepository {
+	return &MockRSSFeedRepository{
+		feeds: make(map[string]storage.RSSFeed),
 	}
 }
 
-func (m *MockFeedRepository) RegisterFeed(feed storage.Feed) error {
+func (m *MockRSSFeedRepository) RegisterFeed(feed storage.RSSFeed) error {
 	if _, exists := m.feeds[feed.ID]; exists {
-		return fmt.Errorf("feed %s already exists", feed.ID)
+		return fmt.Errorf("feed already exists")
 	}
 	m.feeds[feed.ID] = feed
 	return nil
 }
 
-func (m *MockFeedRepository) UnregisterFeed(feedID string) error {
+func (m *MockRSSFeedRepository) UnregisterFeed(feedID string) error {
 	delete(m.feeds, feedID)
 	return nil
 }
@@ -261,7 +261,7 @@ func (m *MockFeedRepository) SetSchedule(feedID string, times []string) error {
 	return nil
 }
 
-func (m *MockFeedRepository) GetSchedule(feedID string) ([]string, error) {
+func (m *MockRSSFeedRepository) GetSchedule(feedID string) ([]string, error) {
 	feed, ok := m.feeds[feedID]
 	if !ok {
 		return []string{}, nil
@@ -272,7 +272,7 @@ func (m *MockFeedRepository) GetSchedule(feedID string) ([]string, error) {
 // TestNewCommandHandler tests handler creation
 func TestNewCommandHandler(t *testing.T) {
 	repo := NewMockChannelRepository(5)
-	handler := NewCommandHandler(repo, NewMockFeedRepository(), NewMockGitHubRepository(), 5)
+	handler := NewCommandHandler(repo, NewMockRSSFeedRepository(), NewMockGitHubRepository(), 5)
 
 	assert.NotNil(t, handler)
 	assert.Equal(t, repo, handler.channelRepo)
@@ -365,7 +365,7 @@ func TestCommandHandler_SetupNews_PermissionValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := NewMockChannelRepository(5)
-			handler := NewCommandHandler(repo, NewMockFeedRepository(), NewMockGitHubRepository(), 5)
+			handler := NewCommandHandler(repo, NewMockRSSFeedRepository(), NewMockGitHubRepository(), 5)
 
 			// We can't easily test the actual Discord response without a real session,
 			// but we can verify the logic by checking repository state
@@ -442,7 +442,7 @@ func TestCommandHandler_SetupNews_ChannelLimitValidation(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			_ = NewCommandHandler(repo, NewMockFeedRepository(), NewMockGitHubRepository(), tt.maxLimit)
+			_ = NewCommandHandler(repo, NewMockRSSFeedRepository(), NewMockGitHubRepository(), tt.maxLimit)
 
 			// Check if channel already exists
 			hasChannel, err := repo.HasChannel(tt.newChannelID)
@@ -525,7 +525,7 @@ func TestCommandHandler_SetupNews_ErrorHandling(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.setupRepo()
-			_ = NewCommandHandler(repo, NewMockFeedRepository(), NewMockGitHubRepository(), 5)
+			_ = NewCommandHandler(repo, NewMockRSSFeedRepository(), NewMockGitHubRepository(), 5)
 
 			// Verify handler was created (implicitly by not panicking)
 
@@ -551,7 +551,7 @@ func TestCommandHandler_Integration(t *testing.T) {
 	// Setup
 	maxLimit := 3
 	repo := NewMockChannelRepository(maxLimit)
-	handler := NewCommandHandler(repo, NewMockFeedRepository(), NewMockGitHubRepository(), maxLimit)
+	handler := NewCommandHandler(repo, NewMockRSSFeedRepository(), NewMockGitHubRepository(), maxLimit)
 
 	// Member with proper permissions
 	member := &discordgo.Member{
@@ -599,7 +599,7 @@ func TestCommandHandler_Integration(t *testing.T) {
 // TestCommandHandler_ConcurrentAccess tests thread safety via repository
 func TestCommandHandler_ConcurrentAccess(t *testing.T) {
 	repo := NewMockChannelRepository(10)
-	handler := NewCommandHandler(repo, NewMockFeedRepository(), NewMockGitHubRepository(), 10)
+	handler := NewCommandHandler(repo, NewMockRSSFeedRepository(), NewMockGitHubRepository(), 10)
 
 	// Add channels concurrently
 	done := make(chan bool)
@@ -666,7 +666,7 @@ func TestCommandHandler_RemoveNews(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			handler := NewCommandHandler(repo, NewMockFeedRepository(), NewMockGitHubRepository(), 10)
+			handler := NewCommandHandler(repo, NewMockRSSFeedRepository(), NewMockGitHubRepository(), 10)
 			initialCount, _ := repo.GetChannelCount()
 
 			// Check if channel exists
@@ -742,7 +742,7 @@ func TestCommandHandler_ListChannels(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			handler := NewCommandHandler(repo, NewMockFeedRepository(), NewMockGitHubRepository(), 10)
+			handler := NewCommandHandler(repo, NewMockRSSFeedRepository(), NewMockGitHubRepository(), 10)
 
 			// Get all channels
 			channels, err := repo.GetAllChannels()
@@ -768,7 +768,7 @@ func TestCommandHandler_ListChannels(t *testing.T) {
 // TestCommandHandler_RemoveNews_Integration tests full remove workflow
 func TestCommandHandler_RemoveNews_Integration(t *testing.T) {
 	repo := NewMockChannelRepository(5)
-	handler := NewCommandHandler(repo, NewMockFeedRepository(), NewMockGitHubRepository(), 5)
+	handler := NewCommandHandler(repo, NewMockRSSFeedRepository(), NewMockGitHubRepository(), 5)
 
 	// Add channels
 	channels := []string{"ch1", "ch2", "ch3"}
@@ -831,7 +831,7 @@ func TestCommandHandler_UpdateNews(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := NewMockChannelRepository(5)
-			handler := NewCommandHandler(repo, NewMockFeedRepository(), NewMockGitHubRepository(), 5)
+			handler := NewCommandHandler(repo, NewMockRSSFeedRepository(), NewMockGitHubRepository(), 5)
 
 			if tt.hasBot {
 				// Create a mock bot (we don't need it functional for this test)
@@ -852,7 +852,7 @@ func TestCommandHandler_UpdateNews(t *testing.T) {
 // TestCommandHandler_SetBot tests setting bot reference
 func TestCommandHandler_SetBot(t *testing.T) {
 	repo := NewMockChannelRepository(5)
-	handler := NewCommandHandler(repo, NewMockFeedRepository(), NewMockGitHubRepository(), 5)
+	handler := NewCommandHandler(repo, NewMockRSSFeedRepository(), NewMockGitHubRepository(), 5)
 
 	// Initially bot should be nil
 	assert.Nil(t, handler.bot)

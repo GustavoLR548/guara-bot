@@ -253,17 +253,17 @@ func TestRedisChannelRepository_GetFeedChannels(t *testing.T) {
 	assert.Len(t, channels, 0)
 }
 
-// TestRedisFeedRepository_RegisterFeed tests feed registration
-func TestRedisFeedRepository_RegisterFeed(t *testing.T) {
+// TestRedisRSSFeedRepository_RegisterFeed tests feed registration
+func TestRedisRSSFeedRepository_RegisterFeed(t *testing.T) {
 	tests := []struct {
 		name          string
-		feed          Feed
+		feed          RSSFeed
 		expectError   bool
 		errorContains string
 	}{
 		{
 			name: "register feed successfully",
-			feed: Feed{
+			feed: RSSFeed{
 				ID:          "godot-official",
 				URL:         "https://godotengine.org/rss.xml",
 				Title:       "Godot Engine",
@@ -274,7 +274,7 @@ func TestRedisFeedRepository_RegisterFeed(t *testing.T) {
 		},
 		{
 			name: "register feed with schedule",
-			feed: Feed{
+			feed: RSSFeed{
 				ID:          "gdquest",
 				URL:         "https://gdquest.com/rss.xml",
 				Title:       "GDQuest",
@@ -289,7 +289,7 @@ func TestRedisFeedRepository_RegisterFeed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, client := setupTestRedis(t)
-			repo := NewRedisFeedRepository(client)
+			repo := NewRedisRSSFeedRepository(client)
 
 			err := repo.RegisterFeed(tt.feed)
 
@@ -316,12 +316,12 @@ func TestRedisFeedRepository_RegisterFeed(t *testing.T) {
 	}
 }
 
-// TestRedisFeedRepository_DuplicateFeed tests duplicate feed registration
-func TestRedisFeedRepository_DuplicateFeed(t *testing.T) {
+// TestRedisRSSFeedRepository_DuplicateFeed tests duplicate feed registration
+func TestRedisRSSFeedRepository_DuplicateFeed(t *testing.T) {
 	_, client := setupTestRedis(t)
-	repo := NewRedisFeedRepository(client)
+	repo := NewRedisRSSFeedRepository(client)
 
-	feed := Feed{
+	feed := RSSFeed{
 		ID:      "godot-official",
 		URL:     "https://godotengine.org/rss.xml",
 		Title:   "Godot Engine",
@@ -338,12 +338,12 @@ func TestRedisFeedRepository_DuplicateFeed(t *testing.T) {
 	assert.Contains(t, err.Error(), "already exists")
 }
 
-// TestRedisFeedRepository_UnregisterFeed tests feed removal
-func TestRedisFeedRepository_UnregisterFeed(t *testing.T) {
+// TestRedisRSSFeedRepository_UnregisterFeed tests feed removal
+func TestRedisRSSFeedRepository_UnregisterFeed(t *testing.T) {
 	_, client := setupTestRedis(t)
-	repo := NewRedisFeedRepository(client)
+	repo := NewRedisRSSFeedRepository(client)
 
-	feed := Feed{
+	feed := RSSFeed{
 		ID:       "godot-official",
 		URL:      "https://godotengine.org/rss.xml",
 		Title:    "Godot Engine",
@@ -371,12 +371,12 @@ func TestRedisFeedRepository_UnregisterFeed(t *testing.T) {
 }
 
 // TestRedisFeedRepository_GetAllFeeds tests retrieving all feeds
-func TestRedisFeedRepository_GetAllFeeds(t *testing.T) {
+func TestRedisRSSFeedRepository_GetAllFeeds(t *testing.T) {
 	_, client := setupTestRedis(t)
-	repo := NewRedisFeedRepository(client)
+	repo := NewRedisRSSFeedRepository(client)
 
 	// Register multiple feeds
-	feeds := []Feed{
+	feeds := []RSSFeed{
 		{ID: "feed1", URL: "http://example.com/1", Title: "Feed 1", AddedAt: time.Now()},
 		{ID: "feed2", URL: "http://example.com/2", Title: "Feed 2", AddedAt: time.Now()},
 		{ID: "feed3", URL: "http://example.com/3", Title: "Feed 3", AddedAt: time.Now()},
@@ -402,8 +402,8 @@ func TestRedisFeedRepository_GetAllFeeds(t *testing.T) {
 	assert.True(t, feedIDs["feed3"])
 }
 
-// TestRedisFeedRepository_Schedule tests schedule management
-func TestRedisFeedRepository_Schedule(t *testing.T) {
+// TestRedisRSSFeedRepository_Schedule tests schedule management
+func TestRedisRSSFeedRepository_Schedule(t *testing.T) {
 	tests := []struct {
 		name          string
 		feedID        string
@@ -449,10 +449,10 @@ func TestRedisFeedRepository_Schedule(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, client := setupTestRedis(t)
-			repo := NewRedisFeedRepository(client)
+			repo := NewRedisRSSFeedRepository(client)
 
 			// Register feed first
-			feed := Feed{
+			feed := RSSFeed{
 				ID:      tt.feedID,
 				URL:     "http://example.com",
 				Title:   "Test Feed",
@@ -481,13 +481,13 @@ func TestRedisFeedRepository_Schedule(t *testing.T) {
 	}
 }
 
-// TestRedisFeedRepository_UpdateSchedule tests updating existing schedule
-func TestRedisFeedRepository_UpdateSchedule(t *testing.T) {
+// TestRedisRSSFeedRepository_UpdateSchedule tests updating existing schedule
+func TestRedisRSSFeedRepository_UpdateSchedule(t *testing.T) {
 	_, client := setupTestRedis(t)
-	repo := NewRedisFeedRepository(client)
+	repo := NewRedisRSSFeedRepository(client)
 
 	// Register feed with initial schedule
-	feed := Feed{
+	feed := RSSFeed{
 		ID:       "feed1",
 		URL:      "http://example.com",
 		Title:    "Test Feed",
@@ -542,7 +542,7 @@ func TestIsValidTime(t *testing.T) {
 
 // TestHistoryRepository tests remain the same as they don't involve feeds
 
-// TestRedisHistoryRepository_SaveAndGetGUID tests GUID operations
+// TestRedisRSSHistoryRepository_SaveAndGetGUID tests GUID operations
 func TestRedisHistoryRepository_SaveAndGetGUID(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -570,7 +570,7 @@ func TestRedisHistoryRepository_SaveAndGetGUID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, client := setupTestRedis(t)
 
-			repo := NewRedisHistoryRepository(client)
+			repo := NewRedisRSSHistoryRepository(client)
 
 			// Save GUIDs
 			for _, guid := range tt.guids {
@@ -586,7 +586,7 @@ func TestRedisHistoryRepository_SaveAndGetGUID(t *testing.T) {
 	}
 }
 
-// TestRedisHistoryRepository_HasGUID tests GUID existence checks
+// TestRedisRSSHistoryRepository_HasGUID tests GUID existence checks
 func TestRedisHistoryRepository_HasGUID(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -624,7 +624,7 @@ func TestRedisHistoryRepository_HasGUID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, client := setupTestRedis(t)
 
-			repo := NewRedisHistoryRepository(client)
+			repo := NewRedisRSSHistoryRepository(client)
 
 			// Save GUIDs
 			for _, guid := range tt.savedGUIDs {
@@ -640,12 +640,12 @@ func TestRedisHistoryRepository_HasGUID(t *testing.T) {
 	}
 }
 
-// TestRedisHistoryRepository_EmptyState tests behavior with no data
-func TestRedisHistoryRepository_EmptyState(t *testing.T) {
+// TestRedisRSSHistoryRepository_EmptyState tests behavior with no data
+func TestRedisRSSHistoryRepository_EmptyState(t *testing.T) {
 	_, client := setupTestRedis(t)
 
 	// Should create new repository without error
-	repo := NewRedisHistoryRepository(client)
+	repo := NewRedisRSSHistoryRepository(client)
 
 	// Should have no last GUID
 	lastGUID, err := repo.GetLastGUID("test-feed")
