@@ -118,11 +118,11 @@ For more information, please check out [here](QUICKSTART.md)
 /remove-feed-channel #tutorials gdquest
 
 # Force immediate check of a specific feed
-/update-news godot
-/update-news techcrunch
+/update-feed godot
+/update-feed techcrunch
 
 # Force immediate check of all registered feeds
-/update-all-news
+/update-all-feeds
 ```
 
 ### Default Feed
@@ -246,7 +246,7 @@ Contributions are welcome! Please:
 - Check feed schedules with `/list-feeds` or set them with `/schedule-feed`
 - Verify feed URL is accessible: `curl <feed-url>`
 - Verify Gemini API key is valid
-- Use `/update-news` to trigger immediate check
+- Use `/update-feed` to trigger immediate check
 - Check logs for error messages
 - Note: Bot checks every minute for scheduled times
 

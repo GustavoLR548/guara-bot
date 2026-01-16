@@ -132,8 +132,8 @@ go test -cover ./... # With coverage
 | `/setup-feed-channel #channel [feed]`              | Subscribe channel to feed (defaults to godot-official)              | Manage Server |
 | `/remove-feed-channel #channel [feed]`             | Unsubscribe channel from feed                                       | Manage Server |
 | `/list-channels`                           | List all channels and their subscriptions                           | Manage Server |
-| `/update-news [feed]`                      | Force immediate check of specific feed (defaults to godot-official) | Manage Server |
-| `/update-all-news`                         | Force immediate check of all feeds                                  | Manage Server |
+| `/update-feed [feed]`                      | Force immediate check of specific feed (defaults to godot-official) | Manage Server |
+| `/update-all-feeds`                         | Force immediate check of all feeds                                  | Manage Server |
 | `/register-feed <id> <url> [title] [desc]` | Register new RSS feed                                               | Manage Server |
 | `/unregister-feed <id>`                    | Remove RSS feed                                                     | Manage Server |
 | `/list-feeds`                              | Show all registered feeds with schedules                            | Anyone        |

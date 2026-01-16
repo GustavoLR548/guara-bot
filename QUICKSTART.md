@@ -41,8 +41,8 @@ go run ./cmd/bot
 /setup-feed-channel #channel [feed]     # Subscribe channel to feed (defaults to godot-official)
 /remove-feed-channel #channel [feed]    # Unsubscribe channel from feed
 /list-channels                  # List all channels and subscriptions
-/update-news [feed]             # Force check specific RSS feed (defaults to godot-official)
-/update-all-news                # Force check all RSS feeds immediately
+/update-feed [feed]             # Force check specific RSS feed (defaults to godot-official)
+/update-all-feeds                # Force check all RSS feeds immediately
 ```
 
 ### Feed Management
@@ -284,7 +284,7 @@ redis-cli ping  # Should return PONG
 - Check `/list-channels` - at least 1 channel must be subscribed
 - Check `/list-feeds` - verify feeds are registered
 - Verify feed schedules with `/list-feeds` (or set with `/schedule-feed`)
-- Use `/update-news` to force check all feeds
+- Use `/update-feed` to force check all feeds
 - View logs: `docker-compose logs bot`
 
 **Feed not updating:**

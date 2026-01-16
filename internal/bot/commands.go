@@ -93,7 +93,7 @@ func (h *CommandHandler) RegisterCommands(s *discordgo.Session) error {
 			Description: "List all channels registered for news updates (Admin only)",
 		},
 		{
-			Name:        "update-news",
+			Name:        "update-feed",
 			Description: "Force an immediate check for new articles from a specific feed (Admin only)",
 			Options: []*discordgo.ApplicationCommandOption{
 				{
@@ -105,7 +105,7 @@ func (h *CommandHandler) RegisterCommands(s *discordgo.Session) error {
 			},
 		},
 		{
-			Name:        "update-all-news",
+			Name:        "update-all-feeds",
 			Description: "Force an immediate check for all registered feeds (Admin only)",
 		},
 		{
@@ -370,9 +370,9 @@ func (h *CommandHandler) HandleCommands(s *discordgo.Session) {
 			h.handleSetupNews(s, i)
 		case "remove-feed-channel":
 			h.handleRemoveNews(s, i)
-		case "update-news":
+		case "update-feed":
 			h.handleUpdateNews(s, i)
-		case "update-all-news":
+		case "update-all-feeds":
 			h.handleUpdateAllNews(s, i)
 		case "register-feed":
 			h.handleRegisterFeed(s, i)
@@ -426,8 +426,8 @@ func (h *CommandHandler) handleHelp(s *discordgo.Session, i *discordgo.Interacti
 		"• `/unregister-feed <feed-url>` - Unregister an existing RSS feed\n" +
 		"• `/list-feeds` - List all registered RSS feeds\n" +
 		"• `/schedule-feed <feed-url> <interval-minutes>` - Schedule automatic updates for a feed\n" +
-		"• `/update-news <channel>` - Manually trigger feed update for a channel\n" +
-		"• `/update-all-news` - Manually trigger update for all channels\n\n" +
+		"• `/update-feed [feed]` - Manually trigger update for a specific feed\n" +
+		"• `/update-all-feeds` - Manually trigger update for all feeds\n\n" +
 		"**GitHub Repository Commands:**\n" +
 		"• `/register-repo <repo-url>` - Register a GitHub repository for monitoring\n" +
 		"• `/unregister-repo <repo-url>` - Unregister a GitHub repository\n" +
