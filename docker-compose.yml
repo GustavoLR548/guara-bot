@@ -1,67 +1,30 @@
-version: '3.8'
-
 services:
-  # Redis service for bot storage
   redis:
     image: redis:7-alpine
     container_name: guara-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
+    command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --appendfsync everysec
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
+    restart: unless-stopped
     networks:
       - guara-bot-network
 
-  # Guara Bot service
   bot:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: guara-bot
-    restart: unless-stopped
     depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      # Discord configuration
-      DISCORD_TOKEN: ${DISCORD_TOKEN}
-      
-      # Gemini AI configuration
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      
-      # Bot configuration
-      MAX_CHANNELS_LIMIT: ${MAX_CHANNELS_LIMIT:-5}
-      CHECK_INTERVAL_MINUTES: ${CHECK_INTERVAL_MINUTES:-15}
-      
-      # GitHub integration (optional)
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-      GITHUB_CHECK_INTERVAL_MINUTES: ${GITHUB_CHECK_INTERVAL_MINUTES:-30}
-      GITHUB_BATCH_THRESHOLD: ${GITHUB_BATCH_THRESHOLD:-5}
-      GITHUB_FILTER_MIN_CHANGES: ${GITHUB_FILTER_MIN_CHANGES:-5}
-      
-      # Redis configuration
-      REDIS_URL: redis:6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      - redis
+    env_file:
+      - .env
+    restart: unless-stopped
     networks:
       - guara-bot-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-volumes:
-  redis_data:
-    driver: local
 
 networks:
   guara-bot-network:
     driver: bridge
+
+volumes:
+  redis_data:
