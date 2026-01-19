@@ -88,10 +88,12 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	hasFeed, err := h.feedRepo.HasFeed(feedID)
 	if err != nil {
 		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to check feed existence: %v", err)
-		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "❌ Error checking feed.",
 			Flags:   discordgo.MessageFlagsEphemeral,
-		})
+		}); err != nil {
+			log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to send followup message: %v", err)
+		}
 		return
 	}
 	if !hasFeed {

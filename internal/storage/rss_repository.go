@@ -592,7 +592,9 @@ func (r *RedisRSSFeedRepository) GetFeed(feedID string) (*RSSFeed, error) {
 	// Parse added_at timestamp
 	addedAtUnix := int64(0)
 	if val, ok := feedData["added_at"]; ok {
-		fmt.Sscanf(val, "%d", &addedAtUnix)
+		if _, err := fmt.Sscanf(val, "%d", &addedAtUnix); err != nil {
+			log.Printf("[FEED-REPO] WARNING: Failed to parse added_at timestamp: %v", err)
+		}
 	}
 
 	// Get schedule

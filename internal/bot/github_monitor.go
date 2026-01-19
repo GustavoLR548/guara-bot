@@ -222,7 +222,9 @@ func (m *GitHubMonitor) checkRepository(ctx context.Context, repo github.Reposit
 
 	if len(prs) == 0 {
 		log.Printf("[GITHUB-MONITOR] No new PRs for %s/%s", repo.Owner, repo.Name)
-		m.githubRepo.UpdateLastChecked(repo.ID, time.Now())
+		if err := m.githubRepo.UpdateLastChecked(repo.ID, time.Now()); err != nil {
+			log.Printf("[GITHUB-MONITOR] ERROR: Failed to update last checked: %v", err)
+		}
 		
 		// Even if no new PRs, check if there are pending PRs to process
 		pendingCount, err := m.githubRepo.GetPendingCount(repo.ID)
@@ -271,7 +273,9 @@ func (m *GitHubMonitor) checkRepository(ctx context.Context, repo github.Reposit
 		filterConfig := github.DefaultFilterConfig()
 		if !github.IsHighValuePR(pr, filterConfig) {
 			rejectedCount++
-			m.githubRepo.MarkProcessed(repo.ID, pr.ID)
+			if err := m.githubRepo.MarkProcessed(repo.ID, pr.ID); err != nil {
+				log.Printf("[GITHUB-MONITOR] ERROR: Failed to mark PR as processed: %v", err)
+			}
 			continue
 		}
 
@@ -285,7 +289,9 @@ func (m *GitHubMonitor) checkRepository(ctx context.Context, repo github.Reposit
 		}
 
 		// Mark as processed
-		m.githubRepo.MarkProcessed(repo.ID, pr.ID)
+		if err := m.githubRepo.MarkProcessed(repo.ID, pr.ID); err != nil {
+			log.Printf("[GITHUB-MONITOR] ERROR: Failed to mark PR as processed: %v", err)
+		}
 		highValueCount++
 	}
 
@@ -298,7 +304,9 @@ func (m *GitHubMonitor) checkRepository(ctx context.Context, repo github.Reposit
 	log.Printf("[GITHUB-MONITOR] ========================================")
 
 	// Update last checked time
-	m.githubRepo.UpdateLastChecked(repo.ID, time.Now())
+	if err := m.githubRepo.UpdateLastChecked(repo.ID, time.Now()); err != nil {
+		log.Printf("[GITHUB-MONITOR] ERROR: Failed to update last checked: %v", err)
+	}
 
 	// Check if we should process the batch
 	pendingCount, err := m.githubRepo.GetPendingCount(repo.ID)

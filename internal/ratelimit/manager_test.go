@@ -322,7 +322,7 @@ func TestManager_ConcurrentAccess(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func() {
 			for j := 0; j < 100; j++ {
-				manager.CanMakeRequest(100)
+				_, _ = manager.CanMakeRequest(100)
 				manager.RecordRequest(100)
 				manager.GetStatistics()
 			}

@@ -120,7 +120,9 @@ func TestRSSFetcher_FetchLatestArticle(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/rss+xml")
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(tt.rssContent))
+				if _, err := w.Write([]byte(tt.rssContent)); err != nil {
+					t.Errorf("Failed to write response: %v", err)
+				}
 			}))
 			defer server.Close()
 
@@ -227,7 +229,9 @@ func TestRSSFetcher_ScrapeArticleContent(t *testing.T) {
 				if tt.statusCode != 0 {
 					w.WriteHeader(tt.statusCode)
 				}
-				w.Write([]byte(tt.htmlContent))
+				if _, err := w.Write([]byte(tt.htmlContent)); err != nil {
+					t.Errorf("Failed to write response: %v", err)
+				}
 			}))
 			defer server.Close()
 
@@ -350,7 +354,9 @@ func TestRSSFetcher_Timeout(t *testing.T) {
 	// Create a slow server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(35 * time.Second) // Longer than client timeout
-		w.Write([]byte("too slow"))
+		if _, err := w.Write([]byte("too slow")); err != nil {
+			t.Logf("Failed to write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
