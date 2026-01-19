@@ -1,10 +1,11 @@
 # Guara Bot
 
-A versatile Discord bot that monitors multiple RSS feeds and posts AI-generated summaries. Perfect for keeping your community updated with news from blogs, game engines, tech sites, and any RSS-enabled source.
+A versatile Discord bot that monitors multiple RSS feeds and GitHub repositories to deliver AI-generated summaries. Keep your community informed with automated updates from blogs, game engines, tech sites, and any RSS-enabled source.
 
 ## Features
 
 - 📰 **Multiple RSS feed support** - Register and monitor unlimited RSS feeds
+- 🐙 **GitHub PR monitoring** with high-value filtering and auto-categorization
 - ⏰ **Time-based scheduling** - Set specific check times per feed (HH:MM format)
 - 🤖 Automatic RSS monitoring with flexible per-feed scheduling
 - 🧠 AI-powered summaries using Google Gemini 2.5 Flash
@@ -16,7 +17,6 @@ A versatile Discord bot that monitors multiple RSS feeds and posts AI-generated 
 - 🛡️ **Cost management with rate limiting and circuit breaker**
 - 🔄 **Automatic retry logic with exponential backoff**
 - 📊 **Token counting to prevent API quota overruns**
-- 🐙 **GitHub PR monitoring** with high-value filtering and auto-categorization
 - 🌍 **Multilingual summaries** in 6 languages (pt-BR, en, es, fr, de, ja)
 - ✅ Fully tested with TDD architecture (55 tests across all packages)
 
