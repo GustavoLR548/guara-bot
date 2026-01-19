@@ -167,16 +167,6 @@ func truncateMessage(message string, maxLength int) string {
 	return message[:maxLength-3] + "..."
 }
 
-// sanitizeRedisKey removes characters that could cause issues in Redis keys
-func sanitizeRedisKey(key string) string {
-	// Remove or replace problematic characters
-	key = strings.ReplaceAll(key, " ", "_")
-	key = strings.ReplaceAll(key, ":", "_")
-	key = strings.ReplaceAll(key, "*", "_")
-	key = strings.ReplaceAll(key, "?", "_")
-	return key
-}
-
 // RateLimiter tracks command cooldowns per user
 type RateLimiter struct {
 	cooldowns map[string]time.Time

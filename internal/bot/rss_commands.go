@@ -98,10 +98,12 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	}
 	if !hasFeed {
 		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Feed not found: %s", feedID)
-		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: fmt.Sprintf("❌ Feed '%s' not found. Use `/list-feeds` to see available feeds.", feedID),
 			Flags:   discordgo.MessageFlagsEphemeral,
-		})
+		}); err != nil {
+			log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to send followup message: %v", err)
+		}
 		return
 	}
 	log.Printf("[SETUP-FEED-CHANNEL] Feed exists: %s", feedID)
@@ -109,10 +111,12 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	// Verify it's a text channel
 	if channelValue.Type != discordgo.ChannelTypeGuildText {
 		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Invalid channel type: %d (expected %d)", channelValue.Type, discordgo.ChannelTypeGuildText)
-		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "❌ Only text channels can receive news.",
 			Flags:   discordgo.MessageFlagsEphemeral,
-		})
+		}); err != nil {
+			log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to send followup message: %v", err)
+		}
 		return
 	}
 
@@ -121,10 +125,12 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	feeds, err := h.channelRepo.GetChannelFeeds(channelID)
 	if err != nil {
 		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to get channel feeds: %v", err)
-		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "❌ Error checking channel.",
 			Flags:   discordgo.MessageFlagsEphemeral,
-		})
+		}); err != nil {
+			log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to send followup message: %v", err)
+		}
 		return
 	}
 	log.Printf("[SETUP-FEED-CHANNEL] Channel %s has %d feeds: %v", channelID, len(feeds), feeds)
