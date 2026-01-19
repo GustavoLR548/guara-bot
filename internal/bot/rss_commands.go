@@ -138,10 +138,12 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	for _, f := range feeds {
 		if f == feedID {
 			log.Printf("[SETUP-FEED-CHANNEL] ERROR: Channel %s already subscribed to feed %s", channelID, feedID)
-			s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 				Content: fmt.Sprintf("⚠️ This channel is already subscribed to feed '%s'.", feedID),
 				Flags:   discordgo.MessageFlagsEphemeral,
-			})
+			}); err != nil {
+				log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to send followup message: %v", err)
+			}
 			return
 		}
 	}
@@ -151,10 +153,12 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	count, err := h.channelRepo.GetChannelCount()
 	if err != nil {
 		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to get channel count: %v", err)
-		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "❌ Error checking channel limit.",
 			Flags:   discordgo.MessageFlagsEphemeral,
-		})
+		}); err != nil {
+			log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to send followup message: %v", err)
+		}
 		return
 	}
 	log.Printf("[SETUP-FEED-CHANNEL] Current channel count: %d, Max: %d, New channel: %v", count, h.maxLimit, len(feeds) == 0)
@@ -162,10 +166,12 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	if count >= h.maxLimit && len(feeds) == 0 {
 		// Only enforce limit for new channels, not for adding feeds to existing channels
 		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Channel limit reached (%d/%d)", count, h.maxLimit)
-		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: fmt.Sprintf("❌ Channel limit reached (%d/%d). Cannot add more channels.", count, h.maxLimit),
 			Flags:   discordgo.MessageFlagsEphemeral,
-		})
+		}); err != nil {
+			log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to send followup message: %v", err)
+		}
 		return
 	}
 
@@ -173,10 +179,12 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	log.Printf("[SETUP-FEED-CHANNEL] Adding channel %s for feed %s", channelID, feedID)
 	if err := h.channelRepo.AddChannel(channelID, feedID); err != nil {
 		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to add channel: %v", err)
-		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: "❌ Error registering channel.",
 			Flags:   discordgo.MessageFlagsEphemeral,
-		})
+		}); err != nil {
+			log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to send followup message: %v", err)
+		}
 		return
 	}
 	log.Printf("[SETUP-FEED-CHANNEL] SUCCESS: Channel added")
@@ -190,10 +198,12 @@ func (h *CommandHandler) handleSetupNews(s *discordgo.Session, i *discordgo.Inte
 	}
 
 	// Send success message
-	s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+	if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 		Content: fmt.Sprintf("✅ **Channel configured successfully!**\n\n<#%s> will now receive news from **%s** (%s).", channelID, feed.Title, feedID),
 		Flags:   discordgo.MessageFlagsEphemeral,
-	})
+	}); err != nil {
+		log.Printf("[SETUP-FEED-CHANNEL] ERROR: Failed to send followup message: %v", err)
+	}
 
 	log.Printf("[SETUP-FEED-CHANNEL] SUCCESS: Channel %s subscribed to feed %s in guild %s", channelID, feedID, i.GuildID)
 }
