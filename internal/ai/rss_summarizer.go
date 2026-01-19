@@ -131,8 +131,13 @@ Article Content:
 	tokenResp, err := model.CountTokens(ctx, genai.Text(fullPrompt))
 	if err != nil {
 		log.Printf("WARNING: Failed to count tokens: %v (proceeding anyway)", err)
+		// Fallback token estimation with overflow protection
+		estimatedTokens := len(fullPrompt) / 4
+		if estimatedTokens > 2147483647 { // Max int32 value
+			estimatedTokens = 2147483647
+		}
 		tokenResp = &genai.CountTokensResponse{
-			TotalTokens: int32(len(fullPrompt) / 4),
+			TotalTokens: int32(estimatedTokens),
 		}
 	}
 

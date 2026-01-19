@@ -267,6 +267,13 @@ func (m *Manager) Reset() {
 // CalculateBackoff returns exponential backoff duration for retry attempt
 func (m *Manager) CalculateBackoff(attempt int) time.Duration {
 	base := m.config.RetryBackoffBase
+	// Prevent integer overflow by capping attempt value
+	if attempt < 0 {
+		attempt = 0
+	}
+	if attempt > 30 { // 2^30 seconds is already > 34 years
+		attempt = 30
+	}
 	// Exponential: 1s, 2s, 4s, 8s, etc.
 	backoff := base * time.Duration(1<<uint(attempt))
 	
