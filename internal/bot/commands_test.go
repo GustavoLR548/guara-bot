@@ -230,7 +230,7 @@ func (m *MockRSSFeedRepository) UnregisterFeed(feedID string) error {
 	return nil
 }
 
-func (m *MockFeedRepository) GetFeed(feedID string) (*storage.Feed, error) {
+func (m *MockRSSFeedRepository) GetFeed(feedID string) (*storage.RSSFeed, error) {
 	feed, ok := m.feeds[feedID]
 	if !ok {
 		return nil, fmt.Errorf("feed not found")
@@ -238,20 +238,20 @@ func (m *MockFeedRepository) GetFeed(feedID string) (*storage.Feed, error) {
 	return &feed, nil
 }
 
-func (m *MockFeedRepository) GetAllFeeds() ([]storage.Feed, error) {
-	feeds := []storage.Feed{}
+func (m *MockRSSFeedRepository) GetAllFeeds() ([]storage.RSSFeed, error) {
+	feeds := []storage.RSSFeed{}
 	for _, feed := range m.feeds {
 		feeds = append(feeds, feed)
 	}
 	return feeds, nil
 }
 
-func (m *MockFeedRepository) HasFeed(feedID string) (bool, error) {
+func (m *MockRSSFeedRepository) HasFeed(feedID string) (bool, error) {
 	_, ok := m.feeds[feedID]
 	return ok, nil
 }
 
-func (m *MockFeedRepository) SetSchedule(feedID string, times []string) error {
+func (m *MockRSSFeedRepository) SetSchedule(feedID string, times []string) error {
 	feed, ok := m.feeds[feedID]
 	if !ok {
 		return fmt.Errorf("feed not found")
